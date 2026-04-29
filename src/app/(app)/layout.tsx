@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { syncManager } from '@/lib/sync/syncManager'
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: '◈' },
@@ -9,6 +10,7 @@ const NAV = [
   { id: 'ventas', label: 'Ventas', path: '/ventas', icon: '↗' },
   { id: 'finanzas', label: 'Finanzas', path: '/finanzas', icon: '$' },
   { id: 'archivos', label: 'Archivos', path: '/archivos', icon: '⊞' },
+  { id: 'cuotas', label: 'Cuotas', path: '/cuotas', icon: '⊟' },
 ]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +19,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
   const [isDark, setIsDark] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
+
+  useEffect(() => {
+    syncManager.init()
+  }, [])
 
   const t = isDark ? {
     bg: '#0F0F12', sidebar: '#13131A', surface: '#17171C',
