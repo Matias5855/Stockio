@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import SWRegister from './sw-register'
 
 export const metadata: Metadata = {
   title: 'StockFlow — Gestión inteligente para tu negocio',
@@ -26,7 +25,7 @@ export default function RootLayout({children,}: {children: React.ReactNode}) {
         <meta name="apple-mobile-web-app-title" content="StockFlow" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
-      <body><SWRegister />{children}</body>
+      <body>{children}</body>
     </html>
   )
 }
