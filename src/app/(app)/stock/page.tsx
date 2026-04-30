@@ -5,7 +5,7 @@ import { useStock } from '@/lib/hooks/useStock'
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
 
 export default function StockPage() {
-  const { productos, loading, addProducto, updateProducto, deleteProducto } = useStock()
+  const { productos, loading, orgId,  addProducto, updateProducto, deleteProducto, refetch } = useStock()
   const [modal, setModal] = useState(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
@@ -25,23 +25,50 @@ export default function StockPage() {
 
   const save = async () => {
   if (!form.nombre) return
-  // Si no pusieron SKU, generamos uno automático
-  const skuFinal = form.sku || `SKU-${Date.now()}`
+
+  let currentOrgId = orgId
+  if (!currentOrgId) {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return alert('No hay sesión activa')
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('org_id')
+      .eq('id', user.id)
+      .single()
+    currentOrgId = profile?.org_id
+  }
+
+  if (!currentOrgId) return alert('Error: no se encontró la organización')
+
   const data = {
     nombre: form.nombre,
-    sku: skuFinal,
+    sku: form.sku?.trim() || `SKU-${Date.now()}`,
     cantidad: +form.cantidad || 0,
     stock_minimo: +form.stock_minimo || 0,
     precio_venta: +form.precio_venta || 0,
     costo: +form.costo || 0,
-    categoria_id: null,
-    proveedor_id: null,
+    org_id: currentOrgId,
+    activo: true,
   }
+
   try {
-    if (editing) await updateProducto(editing, data)
-    else await addProducto(data as any)
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    if (editing) {
+      const { error } = await supabase.from('productos').update(data).eq('id', editing)
+      if (error) throw new Error(error.message)
+    } else {
+      const { error } = await supabase.from('productos').insert(data)
+      if (error) throw new Error(error.message)
+    }
     setModal(false)
-  } catch (e: any) { alert(e.message) }
+    setForm(empty)
+    await refetch()
+  } catch (e: any) {
+    alert(e.message)
+  }
 }
 
   const inp = { background: '#1E1E26', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '9px 12px', color: '#F0EFF8', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' as any }

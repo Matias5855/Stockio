@@ -7,9 +7,12 @@ export default function SWRegister() {
     // Registrar Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
         .then(reg => {
           console.log('[SW] Registrado correctamente:', reg.scope)
+          // Forzar actualización si hay una versión nueva
+          reg.update()
+          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
 
           // Escuchar mensajes del SW (ej: cuando vuelve internet)
           navigator.serviceWorker.addEventListener('message', (event) => {
