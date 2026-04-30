@@ -24,13 +24,25 @@ export default function StockPage() {
   }
 
   const save = async () => {
-    const data = { ...form, cantidad: +form.cantidad, stock_minimo: +form.stock_minimo, precio_venta: +form.precio_venta, costo: +form.costo }
-    try {
-      if (editing) await updateProducto(editing, data)
-      else await addProducto(data as any)
-      setModal(false)
-    } catch (e: any) { alert(e.message) }
+  if (!form.nombre) return
+  // Si no pusieron SKU, generamos uno automático
+  const skuFinal = form.sku || `SKU-${Date.now()}`
+  const data = {
+    nombre: form.nombre,
+    sku: skuFinal,
+    cantidad: +form.cantidad || 0,
+    stock_minimo: +form.stock_minimo || 0,
+    precio_venta: +form.precio_venta || 0,
+    costo: +form.costo || 0,
+    categoria_id: null,
+    proveedor_id: null,
   }
+  try {
+    if (editing) await updateProducto(editing, data)
+    else await addProducto(data as any)
+    setModal(false)
+  } catch (e: any) { alert(e.message) }
+}
 
   const inp = { background: '#1E1E26', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '9px 12px', color: '#F0EFF8', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' as any }
 
