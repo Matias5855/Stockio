@@ -54,6 +54,7 @@ export default function StockPage() {
   }
 
   try {
+    if (navigator.onLine) {
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     if (editing) {
@@ -62,6 +63,12 @@ export default function StockPage() {
     } else {
       const { error } = await supabase.from('productos').insert(data)
       if (error) throw new Error(error.message)
+    }
+  } else {
+    // Sin internet → guardar en IndexedDB y encolar para sync
+    const { saveLocal } = await import('@/lib/db/indexeddb')
+    const localData = { ...data, id: editing || crypto.randomUUID() }
+    await saveLocal('productos', localData, editing ? 'update' : 'insert')
     }
     setModal(false)
     setForm(empty)

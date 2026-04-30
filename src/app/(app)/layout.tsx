@@ -22,6 +22,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     syncManager.init()
+
+    // Interceptar navegación offline
+    const handleOfflineNavigation = (e: MouseEvent) => {
+      if (!navigator.onLine) {
+        const target = e.target as HTMLElement
+        const link = target.closest('a, button')
+        if (link) {
+          e.preventDefault()
+          e.stopPropagation()
+          // No hacer nada — el banner ya indica que está offline
+        }
+      }
+    }
+
+    document.addEventListener('click', handleOfflineNavigation, true)
+    return () => document.removeEventListener('click', handleOfflineNavigation, true)
   }, [])
 
   const t = isDark ? {

@@ -53,10 +53,15 @@ export function useStock() {
   useEffect(() => {
     if (!orgId) return
     fetchProductos()
+      // Escuchar actualizaciones locales (offline)
+    const onLocalUpdate = () => fetchProductosLocal()
+    window.addEventListener('localDataUpdated', onLocalUpdate)
+
     const ch = supabase.channel('productos_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, fetchProductos)
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    return () => { supabase.removeChannel(ch)
+      window.removeEventListener('localDataUpdated', onLocalUpdate)}
   }, [orgId, fetchProductos])
 
   const addProducto = async (p: Partial<Producto>) => {
@@ -85,5 +90,14 @@ export function useStock() {
     if (error) throw new Error(error.message)
   }
 
+  const fetchProductosLocal = async () => {
+    try {
+      const { getLocal } = await import('@/lib/db/indexeddb')
+      const local = await getLocal('productos', orgId!)
+      if (local.length > 0) {
+        setProductos(local.filter((p: any) => p.activo !== false))
+      }
+    } catch {}
+  }
   return { productos, loading, orgId, addProducto, updateProducto, deleteProducto, refetch: fetchProductos }
 }
