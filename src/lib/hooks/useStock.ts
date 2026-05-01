@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
+import { getOrgId } from '@/lib/supabase/client'
 
 export type Producto = {
   id: string
@@ -23,24 +24,26 @@ export function useStock() {
 
   // Obtener orgId
   useEffect(() => {
-    const getOrgId = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: profile } = await supabase
-          .from('profiles').select('org_id').eq('id', user.id).single()
-        if (profile?.org_id) setOrgId(profile.org_id)
-      } catch {}
-    }
-    getOrgId()
-  }, [])
+  getOrgId().then(id => { if (id) setOrgId(id) })
+}, [])
 
   const fetchLocal = useCallback(async (currentOrgId: string) => {
     try {
       const local = await getLocal('productos', currentOrgId)
       const activos = local.filter((p: any) => p.activo !== false)
-      if (activos.length > 0) setProductos(activos)
-    } catch {}
+      if (activos.length > 0) {
+        setProductos(activos)
+        return
+      }
+      //Fallback a localStorage si IndexedDB esta vacio
+      const cached = localStorage.getItem('sf_productos_cache')
+      if (cached) setProductos(JSON.parse(cached))
+    } catch {
+      try {
+        const cached = localStorage.getItem('sf_productos_cache')
+        if (cached) setProductos(JSON.parse(cached))
+      } catch {}
+    }
   }, [])
 
   const fetchProductos = useCallback(async () => {
@@ -58,6 +61,9 @@ export function useStock() {
       if (!error && data) {
         setProductos(data)
         // Guardar en IndexedDB para uso offline
+        try {
+          localStorage.setItem('sf_productos_cache', JSON.stringify(data))
+        } catch {}
         for (const p of data) {
           try { await saveLocal('productos', p, 'update') } catch {}
         }

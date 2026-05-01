@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
+import { getOrgId } from '@/lib/supabase/client'
 
 export type VentaItem = {
   producto_id: string | null
@@ -32,17 +33,8 @@ export function useVentas() {
   const [orgId, setOrgId] = useState<string | null>(null)
 
   useEffect(() => {
-    const getOrgId = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: profile } = await supabase
-          .from('profiles').select('org_id').eq('id', user.id).single()
-        if (profile?.org_id) setOrgId(profile.org_id)
-      } catch {}
-    }
-    getOrgId()
-  }, [])
+  getOrgId().then(id => { if (id) setOrgId(id) })
+}, [])
 
   const fetchVentas = useCallback(async () => {
     if (!orgId) return
