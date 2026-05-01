@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
+import { syncManager } from '@/lib/sync/syncManager'
 
 export type Movimiento = {
   id: string
@@ -72,12 +73,9 @@ export function useMovimientos() {
         .subscribe()
     } catch {}
 
-    const onOnline = () => fetchMovimientos()
-    window.addEventListener('online', onOnline)
-
-    return () => {
-      if (channel) try { supabase.removeChannel(channel) } catch {}
-      window.removeEventListener('online', onOnline)
+    const onOnline = async () => {
+      await syncManager.sync()
+      setTimeout(() => fetchProductos(), 2000) // o fetchMovimientos
     }
   }, [orgId, fetchMovimientos])
 
@@ -118,4 +116,8 @@ export function useMovimientos() {
   }
 
   return { movimientos, loading, addMovimiento, deleteMovimiento, resumen, refetch: fetchMovimientos }
+}
+
+function fetchProductos(): void {
+  throw new Error('Function not implemented.')
 }

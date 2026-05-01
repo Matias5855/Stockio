@@ -14,26 +14,46 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
   const [scanning, setScanning] = useState(true)
 
   useEffect(() => {
-    const reader = new BrowserMultiFormatReader()
+  if (!videoRef.current) return
 
-    navigator.mediaDevices?.getUserMedia({ video: true })
-      .then(() => {
-        reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => {
-          if (result && scanning) {
-            setScanning(false)
-            onDetected(result.getText())
-          }
-          if (err && !(err instanceof NotFoundException)) {
-            setError('Error al acceder a la cámara')
-          }
-        }).catch(() => setError('No se pudo iniciar la cámara'))
-      })
-      .catch(() => setError('No se pudo acceder a la cámara. Verificá los permisos en tu navegador.'))
+  // Verificar soporte
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setError('Tu navegador no soporta el acceso a la cámara')
+    return
+  }
 
-    return () => {
-      BrowserMultiFormatReader.releaseAllStreams()
+  const reader = new BrowserMultiFormatReader()
+
+  navigator.mediaDevices.getUserMedia({ 
+    video: { facingMode: 'environment' } // cámara trasera en móvil
+  })
+  .then(() => {
+    reader.decodeFromVideoDevice(
+      undefined,
+      videoRef.current!,
+      (result, err) => {
+        if (result && scanning) {
+          setScanning(false)
+          onDetected(result.getText())
+        }
+        if (err && !(err instanceof NotFoundException)) {
+          // Ignorar errores de "no encontrado", son normales mientras escanea
+        }
+      }
+    ).catch(e => setError('No se pudo iniciar la cámara: ' + e.message))
+  })
+  .catch(e => {
+    if (e.name === 'NotAllowedError') {
+      setError('Permiso de cámara denegado. Habilitalo en la configuración del navegador.')
+    } else if (e.name === 'NotFoundError') {
+      setError('No se encontró ninguna cámara en este dispositivo.')
+    } else {
+      setError('Error de cámara: ' + e.message)
     }
-  }, [])
+  })
+
+  return () => { BrowserMultiFormatReader.releaseAllStreams() }
+}, [])
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20 }}>

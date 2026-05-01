@@ -22,8 +22,8 @@ class SyncManager {
     if (this.syncing || !this.isOnline) return
     this.syncing = true
     try {
-      await this.pullFromSupabase()
       await this.pushToSupabase()
+      await this.pullFromSupabase()
     } catch (err) {
       console.error('[SyncManager] Error:', err)
     } finally {

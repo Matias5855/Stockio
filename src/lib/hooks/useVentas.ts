@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
+import { syncManager } from '../sync/syncManager'
 
 export type VentaItem = {
   producto_id: string | null
@@ -82,13 +83,13 @@ export function useVentas() {
         .subscribe()
     } catch {}
 
-    const onOnline = () => fetchVentas()
-    window.addEventListener('online', onOnline)
-
-    return () => {
-      if (channel) try { supabase.removeChannel(channel) } catch {}
-      window.removeEventListener('online', onOnline)
+    const onOnline = async () => {
+    // Esperar que el sync suba los datos locales primero
+      await syncManager.sync()
+    // Recién después refrescar desde Supabase
+      setTimeout(() => fetchVentas(), 2000)
     }
+  window.addEventListener('online', onOnline)
   }, [orgId, fetchVentas])
 
   const crearVenta = async (

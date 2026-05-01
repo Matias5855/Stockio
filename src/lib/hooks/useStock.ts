@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
+import { syncManager } from '@/lib/sync/syncManager'
 
 export type Producto = {
   id: string
@@ -90,12 +91,9 @@ export function useStock() {
     } catch {}
 
     // Escuchar cuando vuelve internet
-    const onOnline = () => fetchProductos()
-    window.addEventListener('online', onOnline)
-
-    return () => {
-      if (channel) try { supabase.removeChannel(channel) } catch {}
-      window.removeEventListener('online', onOnline)
+    const onOnline = async () => {
+    await syncManager.sync() // Sincronizar al reconectar
+    setTimeout (() => fetchProductos(), 2000) //o fetchMovimientos()
     }
   }, [orgId, fetchProductos])
 
