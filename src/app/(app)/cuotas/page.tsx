@@ -76,8 +76,12 @@ export default function CuotasPage() {
 
   const save = async () => {
     if (!form.cliente_nombre || !form.monto_total) return
+    // Obtener org_id
+    const orgId = localStorage.getItem('sf_org_id')
+    if (!orgId) return alert ('Error: no se encontró la organización')
     const { error } = await supabase.from('cuotas_ventas').insert({
       ...form,
+      org_id: orgId,
       monto_total: montoConInteres,
       monto_cuota: montoCuota,
       cantidad_cuotas: +form.cantidad_cuotas,
