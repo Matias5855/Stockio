@@ -35,7 +35,7 @@ export function useVentas() {
 
   useEffect(() => {
   getOrgId().then(id => { if (id) setOrgId(id) })
-}, [])
+  }, [])
 
   const fetchVentas = useCallback(async () => {
     if (!orgId) return
@@ -69,6 +69,19 @@ export function useVentas() {
     }
     setLoading(false)
   }, [orgId])
+  // Recuperar ventas offline pendientes del localStorage
+  useEffect(() => {
+    try {
+      const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
+      if (pending.length > 0) {
+        setVentas(prev => {
+          const ids = new Set(prev.map((v: any) => v.id))
+          const nuevas = pending.filter((v: any) => !ids.has(v.id))
+          return [...nuevas, ...prev]
+        })
+      }  
+    } catch {}
+  }, [])
 
   useEffect(() => {
     if (!orgId) return
@@ -85,7 +98,9 @@ export function useVentas() {
 
     const onOnline = () => {
     // Esperar que syncManager termine antes de refrescar
-    window.addEventListener('syncCompleted', fetchVentas, { once: true })
+      window.addEventListener('syncCompleted', () => {
+        fetchVentas()
+      }, { once: true })
     syncManager.sync()
     }
   window.addEventListener('online', onOnline)
@@ -125,11 +140,19 @@ export function useVentas() {
           venta_id: data.id, org_id: orgId!,
         })
         nuevaVenta.id = data.id
+        nuevaVenta.nro_factura = nroFinal
       } catch (err: any) {
         throw err
       }
     } else {
-      await saveLocal('ventas', nuevaVenta, 'insert')
+      // Guardar venta completa con items en la cola de sync
+      await saveLocal('ventas', {...nuevaVenta, venta_items: items}, 'insert')
+      // Guardar también cada item en localStorage como backup
+      try {
+        const pending = JSON.parse(localStorage.getItem('pending_venta_items') || '[]')
+        pending.push({...nuevaVenta, venta_items: items})
+        localStorage.setItem('sf_venta_items', JSON.stringify(pending))
+      } catch {}
     }
 
     setVentas(prev => [nuevaVenta as Venta, ...prev])
