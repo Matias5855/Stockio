@@ -15,44 +15,33 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
 
   useEffect(() => {
   if (!videoRef.current) return
-
   // Verificar soporte
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (!navigator.mediaDevices?.getUserMedia) {
     setError('Tu navegador no soporta el acceso a la cámara')
     return
   }
-
   const reader = new BrowserMultiFormatReader()
-
-  navigator.mediaDevices.getUserMedia({ 
-    video: { facingMode: 'environment' } // cámara trasera en móvil
-  })
-  .then(() => {
-    reader.decodeFromVideoDevice(
-      undefined,
-      videoRef.current!,
-      (result, err) => {
+   // Pequeño delay para asegurar que el video está montado
+  const timer = setTimeout(() => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(() => {
+      reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => { 
         if (result && scanning) {
           setScanning(false)
           onDetected(result.getText())
         }
-        if (err && !(err instanceof NotFoundException)) {
-          // Ignorar errores de "no encontrado", son normales mientras escanea
-        }
-      }
-    ).catch(e => setError('No se pudo iniciar la cámara: ' + e.message))
-  })
-  .catch(e => {
-    if (e.name === 'NotAllowedError') {
-      setError('Permiso de cámara denegado. Habilitalo en la configuración del navegador.')
-    } else if (e.name === 'NotFoundError') {
-      setError('No se encontró ninguna cámara en este dispositivo.')
-    } else {
-      setError('Error de cámara: ' + e.message)
-    }
-  })
-
-  return () => { BrowserMultiFormatReader.releaseAllStreams() }
+      }).catch(e => setError('No se pudo iniciar la cámara: ' + e.message))
+    })
+    .catch(e => {
+      if (e.name === 'NotAllowedError') setError('Permiso de cámara denegado. Habilitalo en la configuración del navegador.')
+        else if (e.name === 'NotFoundError') setError('No se encontró ninguna cámara en este dispositivo.')
+        else setError('Error de cámara: ' + e.message)
+    })
+  }, 300)
+  return () => {
+    clearTimeout(timer)
+    BrowserMultiFormatReader.releaseAllStreams()
+  }
 }, [])
 
   return (

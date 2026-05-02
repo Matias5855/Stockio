@@ -91,9 +91,10 @@ export function useStock() {
     } catch {}
 
     // Escuchar cuando vuelve internet
-    const onOnline = async () => {
-    await syncManager.sync() // Sincronizar al reconectar
-    setTimeout (() => fetchProductos(), 2000) //o fetchMovimientos()
+    const onOnline = () => {
+    // Esperar que syncManager termine antes de refrescar
+      window.addEventListener('syncCompleted', fetchProductos, { once: true })
+      syncManager.sync()
     }
   }, [orgId, fetchProductos])
 

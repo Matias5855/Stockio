@@ -83,11 +83,10 @@ export function useVentas() {
         .subscribe()
     } catch {}
 
-    const onOnline = async () => {
-    // Esperar que el sync suba los datos locales primero
-      await syncManager.sync()
-    // Recién después refrescar desde Supabase
-      setTimeout(() => fetchVentas(), 2000)
+    const onOnline = () => {
+    // Esperar que syncManager termine antes de refrescar
+    window.addEventListener('syncCompleted', fetchVentas, { once: true })
+    syncManager.sync()
     }
   window.addEventListener('online', onOnline)
   }, [orgId, fetchVentas])

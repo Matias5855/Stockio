@@ -73,9 +73,10 @@ export function useMovimientos() {
         .subscribe()
     } catch {}
 
-    const onOnline = async () => {
-      await syncManager.sync()
-      setTimeout(() => fetchProductos(), 2000) // o fetchMovimientos
+    const onOnline = () => {
+      // Esperar que syncManager termine antes de refrescar
+      window.addEventListener('syncCompleted', fetchMovimientos, { once: true })
+      syncManager.sync()
     }
   }, [orgId, fetchMovimientos])
 

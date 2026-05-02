@@ -20,9 +20,16 @@ export default function DashboardPage() {
   const saldo = resumen.ingresos - resumen.egresos
 
   // Datos para gráficos
+  // Generar últimos 4 meses dinámicamente
   const ventasPorMes = Array.from({ length: 4 }, (_, i) => {
-    const mes = ['Ene','Feb','Mar','Abr'][i]
-    const total = ventas.filter(v => v.fecha?.includes(`-0${i+1}-`)).reduce((a,v) => a+v.total, 0)
+    const fecha = new Date()
+    fecha.setMonth(fecha.getMonth() - (3 - i))
+    const mes = fecha.toLocaleString('es-AR', { month: 'short' })
+    const mesNum = String(fecha.getMonth() + 1).padStart(2, '0')
+    const anio = fecha.getFullYear()
+    const total = ventas
+      .filter(v => v.fecha?.startsWith(`${anio}-${mesNum}`))
+      .reduce((a, v) => a + v.total, 0)
     return { mes, total }
   })
 
