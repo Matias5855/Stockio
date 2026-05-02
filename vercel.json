@@ -13,7 +13,7 @@
         { "key": "Permissions-Policy", "value": "microphone=(), geolocation=(), interest-cohort=()" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; frame-src https://www.mercadopago.com.ar https://www.mercadopago.com; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://www.mercadopago.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://*.mercadopago.com https://*.mercadolibre.com; img-src 'self' data: blob: https://*.supabase.co https://*.mercadopago.com; font-src 'self' data:; frame-src https://www.mercadopago.com.ar https://www.mercadopago.com https://*.mercadopago.com; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
         }
       ]
     }

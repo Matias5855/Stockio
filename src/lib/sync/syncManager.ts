@@ -88,8 +88,7 @@ class SyncManager {
           ventaData.nro_factura = nroFinal
 
           const { data: ventaCreada, error: ventaErr } = await this.supabase
-            .from('ventas').insert(ventaData).select().single()
-
+            .from('ventas').upsert(ventaData, { onConflict: 'id', ignoreDuplicates: true }).select().single()
           if (ventaErr) throw new Error(ventaErr.message)
 
           // Insertar items si existen
