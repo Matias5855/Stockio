@@ -26,6 +26,7 @@ const NAV = [
   { id: 'finanzas',  label: 'Finanzas',   icon: '$' },
   { id: 'archivos',  label: 'Archivos',   icon: '⊞' },
   { id: 'cuotas',    label: 'Cuotas',     icon: '⊟' },
+  { id: 'configuracion', label: 'Configuración', icon: '⚙', path: '/configuracion' }
 ]
 
 const PAGES: Record<string, React.ReactNode> = {
