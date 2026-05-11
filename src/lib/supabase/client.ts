@@ -22,6 +22,13 @@ export async function getOrgId(): Promise<string | null> {
     
     if (profile?.org_id) {
       localStorage.setItem('sf_org_id', profile.org_id)
+      // Guardar nombre del negocio
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('nombre')
+        .eq('id', profile.org_id)
+        .single()
+      if (org?.nombre) localStorage.setItem('sf_org_nombre', org.nombre)
       return profile.org_id
     }
   } catch {}

@@ -3,7 +3,10 @@ import { useState, useRef } from 'react'
 import { useVentas } from '@/lib/hooks/useVentas'
 import { useStock } from '@/lib/hooks/useStock'
 import { descargarTicket, TicketData } from '@/lib/ticket'
+import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+import ExportarBtn from '@/components/ExportarBtn'
+import { exportarStockExcel, exportarStockPDF, exportarVentasExcel, exportarVentasPDF } from '@/lib/exportar'
 
 // Carga el escáner solo en cliente (usa APIs del browser)
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false })
@@ -83,12 +86,35 @@ export default function VentasPage() {
   }
 
   // Descarga el ticket en PDF localmente
-  const descargarPDF = (v: any) => {
+  const descargarPDF = async (v: any) => {
+    const supabase = createClient()
+    const orgID = localStorage.getItem('sf_org_id')
+
+    // Obtener datos del negocio desde Supabase
+    const { data: org } = await supabase
+      .from('organizaciones')
+      .select('nombre')
+      .eq('id', orgID)
+      .single()
+      // Castear a any para evitar errores de TypeScript
+      const orgData = org as any
+
     const data: TicketData = {
       nro_factura: v.nro_factura,
       fecha: v.fecha,
       cliente_nombre: v.cliente_nombre ?? 'Consumidor Final',
-      negocio_nombre: 'Mi Negocio',
+      negocio_nombre: orgData?.name ?? 'Mi Negocio',
+      negocio_cuit: orgData?.cuit,
+      negocio_direccion: orgData?.direccion,
+      negocio_telefono: orgData?.telefono,
+      negocio_email: orgData?.email_negocio,
+      negocio_iibb: orgData?.iibb,
+      negocio_inicio_actividades: orgData?.inicio_actividades,
+      condicion_iva_emisor: orgData?.condicion_iva ?? 'Monotributista',
+      condicion_iva_receptor: 'Consumidor Final',
+      condicion_venta: 'Contado',
+      punto_venta: orgData?.punto_venta ?? '0001',
+      tipo_comprobante: 'C',
       items: (v.venta_items ?? []).map((i: any) => ({
         nombre: i.producto_nombre,
         cantidad: i.cantidad,
@@ -98,7 +124,6 @@ export default function VentasPage() {
       subtotal: v.subtotal,
       descuento: v.descuento ?? 0,
       total: v.total,
-      tipo_comprobante: 'X',
     }
     descargarTicket(data)
   }
@@ -218,6 +243,10 @@ export default function VentasPage() {
       </div>
 
       {/* Modal nueva venta */}
+      <ExportarBtn
+        onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+        onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+      />
       {modal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 28, width: 480 }}>
@@ -232,7 +261,12 @@ export default function VentasPage() {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={form.producto_id} onChange={e => { const p = productos.find(x => x.id === e.target.value); setForm(f => ({...f, producto_id: e.target.value, precio_unitario: p ? String(p.precio_venta) : f.precio_unitario})) }} style={inp}>
                     <option value="">— Seleccionar —</option>
-                    {productos.map(p => <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.cantidad})</option>)}
+                    {productos.map(p => {
+                      const talle = (p as any).talle
+                      return (
+                        <option key={p.id} value={p.id}>{p.nombre}{talle ? ` — T: ${talle}` : ''} (Stock: {p.cantidad})</option>
+                      )
+                    })}
                   </select>
                   <button onClick={() => setScanner(true)} title="Escanear código"
                     style={{ background: 'rgba(124,111,224,0.15)', border: '1px solid rgba(124,111,224,0.4)', borderRadius: 8, padding: '0 12px', cursor: 'pointer', color: '#7C6FE0', fontSize: 18, flexShrink: 0 }}>

@@ -97,6 +97,9 @@ export default function LoginPage() {
           <p style={{ color: '#7A7A95', fontSize: 13, textAlign: 'center', margin: 0 }}>
             ¿No tenés cuenta? <a href="/register" style={{ color: '#7C6FE0' }}>Registrarse</a>
           </p>
+          <p style={{ color: '#7A7A95', fontSize: 13, textAlign: 'center', margin: '8px 0 0' }}>
+            <a href="/recuperar" style={{ color: '#7C6FE0' }}>¿Olvidaste tu contraseña?</a>
+          </p>
         </div>
       </div>
     </div>

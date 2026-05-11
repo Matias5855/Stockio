@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     // 5. Enviar email con Resend
     if (email_cliente) {
       await resend.emails.send({
-        from: `${org?.name ?? 'StockFlow'} <facturas@tudominio.com>`,
+        from: `${org?.name ?? 'StockFlow'} <onboarding@resend.dev>`,
         to: email_cliente,
         subject: `Tu comprobante ${venta.nro_factura}`,
         html: `

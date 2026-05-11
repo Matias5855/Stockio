@@ -94,6 +94,7 @@ export default function CuotasPage() {
   }
 
   const registrarPago = async (cuotaPagoId: string, cuotaVentaId: string, monto: number) => {
+    const orgId = localStorage.getItem('sf_org_id')
     await supabase.from('cuota_pagos').update({
       estado: 'pagada',
       fecha_pago: new Date().toISOString().split('T')[0],
@@ -109,6 +110,18 @@ export default function CuotasPage() {
         cuotas_pagadas: nuevasCuotasPagadas,
         estado: nuevasCuotasPagadas >= cv.cantidad_cuotas ? 'completada' : 'activa',
       }).eq('id', cuotaVentaId)
+      //Registrar en flujo de caja
+      if (orgId) {
+        await supabase.from('movimientos').insert({
+          descripcion: 'Cobro cuota ${cv.cliente_nombre} (${nuevasCuotasPagadas}/)',
+          tipo: 'ingreso',
+          categoria_nombre: 'Cuotas',
+          monto,
+          fecha: new Date().toISOString().split('T')[0],
+          org_id: orgId,
+          venta_id: null,
+        })
+      }
     }
     fetchCuotas()
     if (detalle?.id === cuotaVentaId) {
@@ -117,6 +130,7 @@ export default function CuotasPage() {
     }
   }
 
+  const [qrModal, setQrModal] = useState<{ link: string; nombre: string; monto: number } | null>(null)
   const generarLinkMP = async (cv: CuotaVenta) => {
     setGenerandoLink(true)
     try {
@@ -132,9 +146,13 @@ export default function CuotasPage() {
       })
       const data = await res.json()
       if (data.link) {
+        //Guardar link en Supabase
         await supabase.from('cuotas_ventas').update({ mp_link_pago: data.link }).eq('id', cv.id)
-        window.open(data.link, '_blank')
+        //Mostrar QR en modal
+        setQrModal({link: data.link, nombre: cv.cliente_nombre, monto: cv.monto_cuota})
         fetchCuotas()
+      } else {
+        alert(data.error ?? 'Error generando link de pago')
       }
     } catch { alert('Error generando link') }
     setGenerandoLink(false)
@@ -349,6 +367,50 @@ export default function CuotasPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button onClick={() => setModal(false)} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', color: '#7A7A95', fontSize: 13 }}>Cancelar</button>
               <button onClick={save} style={{ background: '#7C6FE0', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>Crear plan de cuotas</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {qrModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: '#F0EFF8' }}>Cobro a {qrModal.nombre}</p>
+            <p style={{ margin: '0 0 20px', fontSize: 14, color: '#22C97A', fontWeight: 600 }}>${qrModal.monto.toLocaleString('es-AR')}</p>
+      
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#7A7A95' }}>El cliente escanea este QR con la app de Mercado Pago</p>
+      
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrModal.link)}&bgcolor=17171C&color=F0EFF8&margin=16`}
+              alt="QR de pago"
+              style={{ borderRadius: 12, border: '3px solid #7C6FE0', marginBottom: 16 }}
+            />
+
+            <p style={{ margin: '0 0 16px', fontSize: 11, color: '#7A7A95' }}>
+              También puede pagar con tarjeta abriendo el link
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => navigator.clipboard.writeText(qrModal.link).then(() => alert('Link copiado'))}
+                style={{ background: 'rgba(124,111,224,0.15)', border: '1px solid rgba(124,111,224,0.3)', borderRadius: 8, padding: '8px 16px', color: '#7C6FE0', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                📋 Copiar link
+              </button>
+              
+              <a
+                href={qrModal.link}
+                target="_blank"
+                rel="noreferrer"
+                style={{ background: 'rgba(0,158,227,0.15)', border: '1px solid rgba(0,158,227,0.3)', borderRadius: 8, padding: '8px 16px', color: '#009EE3', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+              >
+                🔗 Abrir
+              </a>
+              <button
+                onClick={() => setQrModal(null)}
+                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 16px', color: '#7A7A95', fontSize: 12, cursor: 'pointer' }}
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

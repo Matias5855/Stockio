@@ -26,6 +26,7 @@
     "resend": "^6.12.2",
     "sharp": "^0.34.5",
     "soap": "^1.9.1",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { useMovimientos } from '@/lib/hooks/useMovimientos'
+import { exportarStockExcel, exportarStockPDF } from '@/lib/exportar'
+import ExportarBtn from '@/components/ExportarBtn'
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
 const fmtK = (n: number) => n >= 1000000 ? '$' + (n/1000000).toFixed(1) + 'M' : n >= 1000 ? '$' + (n/1000).toFixed(0) + 'k' : '$' + n
@@ -33,6 +35,10 @@ export default function FinanzasPage() {
           <p style={{ margin: 0, fontSize: 13, color: '#7A7A95' }}>{movimientos.length} movimientos registrados</p>
         </div>
         <button onClick={() => setModal(true)} style={{ background: '#7C6FE0', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>+ Nuevo movimiento</button>
+        <ExportarBtn
+          onExcelClick={() => exportarStockExcel(movimientos as any, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+          onPDFClick={() => exportarStockPDF(movimientos as any, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 20 }}>

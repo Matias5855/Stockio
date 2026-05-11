@@ -2,6 +2,7 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { syncManager } from '@/lib/sync/syncManager'
+import ConfiguracionPage from './configuracion/page'
 
 // Importar todas las páginas directamente
 import DashboardPage from './dashboard/page'
@@ -10,6 +11,8 @@ import VentasPage from './ventas/page'
 import FinanzasPage from './finanzas/page'
 import ArchivosPage from './archivos/page'
 import CuotasPage from './cuotas/page'
+import BusquedaGlobal from '@/components/BusquedaGlobal'
+import Notificaciones from '@/components/Notificaciones'
 
 // Context de navegación
 export const NavContext = createContext<{
@@ -36,6 +39,7 @@ const PAGES: Record<string, React.ReactNode> = {
   finanzas:  <FinanzasPage />,
   archivos:  <ArchivosPage />,
   cuotas:    <CuotasPage />,
+  configuracion: <ConfiguracionPage />
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -102,6 +106,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <header style={{ 
+            padding: '12px 28px', 
+            borderBottom: `1px solid ${t.border}`,
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 16,
+            background: t.bg,
+            flexShrink: 0,
+          }}>
+            <BusquedaGlobal onNavegar={setPage} />
+            <Notificaciones />
+          </header>
           {/* SIDEBAR */}
           <aside style={{ width: collapsed ? 60 : 220, background: t.sidebar, borderTop: 'none', borderBottom: 'none', borderLeft: 'none', borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', transition: 'width 0.2s ease', flexShrink: 0, overflow: 'hidden' }}>
 
@@ -109,7 +125,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {!collapsed && (
                 <div>
                   <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: t.accent }}>StockFlow</p>
-                  <p style={{ margin: '2px 0 0', fontSize: 11, color: t.textMuted }}>Gestión PyME</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: t.textMuted }}>{localStorage.getItem('sf_org_nombre') ?? 'Gestión PyME'}</p>
                 </div>
               )}
               <button onClick={() => setCollapsed(v => !v)} style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderLeft: 'none', cursor: 'pointer', color: t.textMuted, padding: 4, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0, fontSize: 18 }}>☰</button>

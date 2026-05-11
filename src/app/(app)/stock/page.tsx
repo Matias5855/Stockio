@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { useStock } from '@/lib/hooks/useStock'
+import ExportarBtn from '@/components/ExportarBtn'
+import { exportarStockExcel, exportarStockPDF } from '@/lib/exportar'
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
 
@@ -9,7 +11,7 @@ export default function StockPage() {
   const [modal, setModal] = useState(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
-  const empty = { nombre: '', sku: '', cantidad: '', stock_minimo: '', precio_venta: '', costo: '', categoria_id: '', proveedor_id: '' }
+  const empty = { nombre: '', sku: '', cantidad: '', stock_minimo: '', precio_venta: '', costo: '', categoria_id: '', proveedor_id: '', talle: '', color: '' }
   const [form, setForm] = useState(empty)
 
   const filtered = productos.filter(p =>
@@ -88,6 +90,10 @@ export default function StockPage() {
           <p style={{ margin: 0, fontSize: 13, color: '#7A7A95' }}>{productos.length} productos · Valor: {fmt(productos.reduce((a,p) => a + p.cantidad * p.costo, 0))}</p>
         </div>
         <button onClick={openNew} style={{ background: '#7C6FE0', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>+ Nuevo producto</button>
+        <ExportarBtn
+          onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+          onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('sf_org_name') ?? 'Negocio')}
+        />
       </div>
 
       <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, overflow: 'hidden' }}>
@@ -99,7 +105,7 @@ export default function StockPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
-                {['Producto', 'SKU', 'Cantidad', 'Mín.', 'Precio venta', 'Costo', 'Margen', 'Estado', ''].map(h => (
+                {['Producto', 'SKU', 'Talle', 'Cantidad', 'Mín.', 'Precio venta', 'Costo', 'Margen', 'Estado', ''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#7A7A95', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{h}</th>
                 ))}
               </tr>
@@ -112,6 +118,7 @@ export default function StockPage() {
                   <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 500 }}>{p.nombre}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95', fontFamily: 'monospace' }}>{p.sku}</td>
+                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{(p as any).talle ?? '—'}</td>
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: bajo ? '#E05555' : '#22C97A' }}>{p.cantidad}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.stock_minimo}</td>
                     <td style={{ padding: '12px 14px' }}>{fmt(p.precio_venta)}</td>
@@ -141,7 +148,7 @@ export default function StockPage() {
           <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 28, width: 500 }}>
             <p style={{ margin: '0 0 20px', fontSize: 17, fontWeight: 600 }}>{editing ? 'Editar producto' : 'Nuevo producto'}</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {[['nombre','Nombre','text'],['sku','SKU','text'],['cantidad','Cantidad','number'],['stock_minimo','Stock mínimo','number'],['precio_venta','Precio venta','number'],['costo','Costo','number']].map(([k,l,t]) => (
+              {[['nombre','Nombre','text'],['sku','SKU','text'],['talle','Talle','text'],['cantidad','Cantidad','number'],['stock_minimo','Stock mínimo','number'],['precio_venta','Precio venta','number'],['costo','Costo','number']].map(([k,l,t]) => (
                 <div key={k}>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95' }}>{l}</p>
                   <input type={t} value={(form as any)[k]} onChange={e => setForm(p => ({...p, [k]: e.target.value}))} style={inp} />
