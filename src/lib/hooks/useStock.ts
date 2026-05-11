@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
@@ -18,31 +18,33 @@ export type Producto = {
 }
 
 export function useStock() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [productos, setProductos] = useState<Producto[]>([])
   const [loading, setLoading] = useState(true)
   const [orgId, setOrgId] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
-  // Obtener orgId
   useEffect(() => {
-  getOrgId().then(id => { if (id) setOrgId(id) })
-}, [])
+    mountedRef.current = true
+    getOrgId().then(id => { if (id && mountedRef.current) setOrgId(id) })
+    return () => { mountedRef.current = false }
+  }, [])
 
   const fetchLocal = useCallback(async (currentOrgId: string) => {
     try {
       const local = await getLocal('productos', currentOrgId)
-      const activos = local.filter((p: any) => p.activo !== false)
+      const activos = local.filter((p: Producto) => p.activo !== false)
       if (activos.length > 0) {
-        setProductos(activos)
+        if (mountedRef.current) setProductos(activos)
         return
       }
-      //Fallback a localStorage si IndexedDB esta vacio
       const cached = localStorage.getItem('sf_productos_cache')
-      if (cached) setProductos(JSON.parse(cached))
-    } catch {
+      if (cached && mountedRef.current) setProductos(JSON.parse(cached))
+    } catch (err) {
+      console.warn('[useStock] fallback localStorage:', err)
       try {
         const cached = localStorage.getItem('sf_productos_cache')
-        if (cached) setProductos(JSON.parse(cached))
+        if (cached && mountedRef.current) setProductos(JSON.parse(cached))
       } catch {}
     }
   }, [])
@@ -51,57 +53,55 @@ export function useStock() {
     if (!orgId) return
     setLoading(true)
     if (!navigator.onLine) {
-      // Offline: usar IndexedDB
       await fetchLocal(orgId)
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
       return
     }
     try {
       const { data, error } = await supabase
         .from('productos').select('*').eq('org_id', orgId).eq('activo', true).order('nombre')
       if (!error && data) {
-        setProductos(data)
-        // Guardar en IndexedDB para uso offline
-        try {
-          localStorage.setItem('sf_productos_cache', JSON.stringify(data))
-        } catch {}
-        for (const p of data) {
-          try { await saveLocal('productos', p, 'update') } catch {}
-        }
+        if (mountedRef.current) setProductos(data)
+        try { localStorage.setItem('sf_productos_cache', JSON.stringify(data)) } catch {}
+        // Paralelizar guardado en IndexedDB (antes era secuencial con for...of await)
+        await Promise.all(
+          data.map(p => saveLocal('productos', p, 'update').catch(() => {}))
+        )
       }
-    } catch {
-      // Si falla, usar datos locales
+    } catch (err) {
+      console.warn('[useStock] fetch fallo, usando local:', err)
       await fetchLocal(orgId)
     }
-    setLoading(false)
-  }, [orgId, fetchLocal])
+    if (mountedRef.current) setLoading(false)
+  }, [orgId, fetchLocal, supabase])
 
   useEffect(() => {
     if (!orgId) return
     fetchProductos()
 
-    // Solo suscribir al realtime si hay internet
     if (!navigator.onLine) return
 
-    let channel: any = null
-    try {
-      channel = supabase.channel(`productos_${orgId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, fetchProductos)
-        .subscribe()
-    } catch {}
+    // Suscripcion realtime con cleanup apropiado
+    const channel = supabase.channel(`productos_${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, fetchProductos)
+      .subscribe()
 
-    // Escuchar cuando vuelve internet
-    const onOnline = () => {
-    // Esperar que syncManager termine antes de refrescar
-      window.addEventListener('syncCompleted', fetchProductos, { once: true })
-      syncManager.sync()
+    // Listener online: usar await en lugar de evento para evitar race condition
+    const onOnline = async () => {
+      await syncManager.sync()
+      if (mountedRef.current) await fetchProductos()
     }
-  }, [orgId, fetchProductos])
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [orgId, fetchProductos, supabase])
 
   const addProducto = async (p: Partial<Producto>) => {
-    const newId = crypto.randomUUID()
     const producto = {
-      id: newId,
+      id: crypto.randomUUID(),
       nombre: p.nombre ?? '',
       sku: p.sku?.trim() || `SKU-${Date.now()}`,
       cantidad: p.cantidad ?? 0,
@@ -119,12 +119,12 @@ export function useStock() {
       await saveLocal('productos', producto, 'insert')
     }
 
-    // Actualizar UI inmediatamente
     setProductos(prev => [...prev, producto])
   }
 
   const updateProducto = async (id: string, data: Partial<Producto>) => {
-    const updated = { ...productos.find(p => p.id === id), ...data }
+    const existente = productos.find(p => p.id === id)
+    const updated = { ...existente, ...data, id }
 
     if (navigator.onLine) {
       const { error } = await supabase.from('productos').update(data).eq('id', id)

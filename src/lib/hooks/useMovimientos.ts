@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
@@ -18,13 +18,16 @@ export type Movimiento = {
 }
 
 export function useMovimientos() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
   const [loading, setLoading] = useState(true)
   const [orgId, setOrgId] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    getOrgId().then(id => { if (id) setOrgId(id) })
+    mountedRef.current = true
+    getOrgId().then(id => { if (id && mountedRef.current) setOrgId(id) })
+    return () => { mountedRef.current = false }
   }, [])
 
   const fetchMovimientos = useCallback(async () => {
@@ -34,9 +37,13 @@ export function useMovimientos() {
     if (!navigator.onLine) {
       try {
         const local = await getLocal('movimientos', orgId)
-        setMovimientos(local.sort((a: any, b: any) => b.fecha?.localeCompare(a.fecha)))
-      } catch {}
-      setLoading(false)
+        if (mountedRef.current) {
+          setMovimientos(local.sort((a: Movimiento, b: Movimiento) => b.fecha?.localeCompare(a.fecha)))
+        }
+      } catch (err) {
+        console.warn('[useMovimientos] error leyendo local:', err)
+      }
+      if (mountedRef.current) setLoading(false)
       return
     }
 
@@ -46,19 +53,21 @@ export function useMovimientos() {
         .eq('org_id', orgId)
         .order('fecha', { ascending: false })
       if (data) {
-        setMovimientos(data)
-        for (const m of data) {
-          try { await saveLocal('movimientos', m, 'update') } catch {}
-        }
+        if (mountedRef.current) setMovimientos(data)
+        // Paralelizar guardado en IndexedDB
+        await Promise.all(
+          data.map(m => saveLocal('movimientos', m, 'update').catch(() => {}))
+        )
       }
-    } catch {
+    } catch (err) {
+      console.warn('[useMovimientos] fetch fallo, usando local:', err)
       try {
         const local = await getLocal('movimientos', orgId)
-        setMovimientos(local)
+        if (mountedRef.current) setMovimientos(local)
       } catch {}
     }
-    setLoading(false)
-  }, [orgId])
+    if (mountedRef.current) setLoading(false)
+  }, [orgId, supabase])
 
   useEffect(() => {
     if (!orgId) return
@@ -66,25 +75,26 @@ export function useMovimientos() {
 
     if (!navigator.onLine) return
 
-    let channel: any = null
-    try {
-      channel = supabase.channel(`movimientos_${orgId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, fetchMovimientos)
-        .subscribe()
-    } catch {}
+    const channel = supabase.channel(`movimientos_${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, fetchMovimientos)
+      .subscribe()
 
-    const onOnline = () => {
-      // Esperar que syncManager termine antes de refrescar
-      window.addEventListener('syncCompleted', fetchMovimientos, { once: true })
-      syncManager.sync()
+    const onOnline = async () => {
+      await syncManager.sync()
+      if (mountedRef.current) await fetchMovimientos()
     }
-  }, [orgId, fetchMovimientos])
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [orgId, fetchMovimientos, supabase])
 
   const addMovimiento = async (m: Omit<Movimiento, 'id' | 'created_at' | 'venta_id'>) => {
-    const newId = crypto.randomUUID()
     const nuevo = {
       ...m,
-      id: newId,
+      id: crypto.randomUUID(),
       org_id: orgId!,
       venta_id: null,
       created_at: new Date().toISOString(),
@@ -111,14 +121,11 @@ export function useMovimientos() {
     setMovimientos(prev => prev.filter(m => m.id !== id))
   }
 
-  const resumen = {
+  // useMemo evita recalcular en cada render si movimientos no cambio
+  const resumen = useMemo(() => ({
     ingresos: movimientos.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + m.monto, 0),
     egresos: movimientos.filter(m => m.tipo === 'egreso').reduce((a, m) => a + m.monto, 0),
-  }
+  }), [movimientos])
 
   return { movimientos, loading, addMovimiento, deleteMovimiento, resumen, refetch: fetchMovimientos }
-}
-
-function fetchProductos(): void {
-  throw new Error('Function not implemented.')
 }

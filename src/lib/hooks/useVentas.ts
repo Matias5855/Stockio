@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
@@ -28,13 +28,16 @@ export type Venta = {
 }
 
 export function useVentas() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [ventas, setVentas] = useState<Venta[]>([])
   const [loading, setLoading] = useState(true)
   const [orgId, setOrgId] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-  getOrgId().then(id => { if (id) setOrgId(id) })
+    mountedRef.current = true
+    getOrgId().then(id => { if (id && mountedRef.current) setOrgId(id) })
+    return () => { mountedRef.current = false }
   }, [])
 
   const fetchVentas = useCallback(async () => {
@@ -44,9 +47,13 @@ export function useVentas() {
     if (!navigator.onLine) {
       try {
         const local = await getLocal('ventas', orgId)
-        setVentas(local.sort((a: any, b: any) => b.fecha?.localeCompare(a.fecha)))
-      } catch {}
-      setLoading(false)
+        if (mountedRef.current) {
+          setVentas(local.sort((a: Venta, b: Venta) => b.fecha?.localeCompare(a.fecha)))
+        }
+      } catch (err) {
+        console.warn('[useVentas] error leyendo local:', err)
+      }
+      if (mountedRef.current) setLoading(false)
       return
     }
 
@@ -56,30 +63,33 @@ export function useVentas() {
         .eq('org_id', orgId)
         .order('fecha', { ascending: false })
       if (data) {
-        setVentas(data)
-        for (const v of data) {
-          try { await saveLocal('ventas', v, 'update') } catch {}
-        }
+        if (mountedRef.current) setVentas(data)
+        // Paralelizar guardado en IndexedDB
+        await Promise.all(
+          data.map(v => saveLocal('ventas', v, 'update').catch(() => {}))
+        )
       }
-    } catch {
+    } catch (err) {
+      console.warn('[useVentas] fetch fallo, usando local:', err)
       try {
         const local = await getLocal('ventas', orgId)
-        setVentas(local)
+        if (mountedRef.current) setVentas(local)
       } catch {}
     }
-    setLoading(false)
-  }, [orgId])
+    if (mountedRef.current) setLoading(false)
+  }, [orgId, supabase])
+
   // Recuperar ventas offline pendientes del localStorage
   useEffect(() => {
     try {
       const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
       if (pending.length > 0) {
         setVentas(prev => {
-          const ids = new Set(prev.map((v: any) => v.id))
-          const nuevas = pending.filter((v: any) => !ids.has(v.id))
+          const ids = new Set(prev.map(v => v.id))
+          const nuevas = pending.filter((v: Venta) => !ids.has(v.id))
           return [...nuevas, ...prev]
         })
-      }  
+      }
     } catch {}
   }, [])
 
@@ -89,22 +99,21 @@ export function useVentas() {
 
     if (!navigator.onLine) return
 
-    let channel: any = null
-    try {
-      channel = supabase.channel(`ventas_${orgId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, fetchVentas)
-        .subscribe()
-    } catch {}
+    const channel = supabase.channel(`ventas_${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, fetchVentas)
+      .subscribe()
 
-    const onOnline = () => {
-    // Esperar que syncManager termine antes de refrescar
-      window.addEventListener('syncCompleted', () => {
-        fetchVentas()
-      }, { once: true })
-    syncManager.sync()
+    const onOnline = async () => {
+      await syncManager.sync()
+      if (mountedRef.current) await fetchVentas()
     }
-  window.addEventListener('online', onOnline)
-  }, [orgId, fetchVentas])
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [orgId, fetchVentas, supabase])
 
   const crearVenta = async (
     venta: Omit<Venta, 'id' | 'nro_factura' | 'created_at'>,
@@ -122,35 +131,35 @@ export function useVentas() {
     }
 
     if (navigator.onLine) {
-      try {
-        const { count } = await supabase
-          .from('ventas').select('*', { count: 'exact', head: true })
-        const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
-        nuevaVenta.nro_factura = nroFinal
+      const { count } = await supabase
+        .from('ventas').select('*', { count: 'exact', head: true })
+      const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
+      nuevaVenta.nro_factura = nroFinal
 
-        const { data, error } = await supabase
-          .from('ventas').insert({ ...venta, org_id: orgId!, nro_factura: nroFinal }).select().single()
-        if (error) throw new Error(error.message)
+      const { data, error } = await supabase
+        .from('ventas').insert({ ...venta, org_id: orgId!, nro_factura: nroFinal }).select().single()
+      if (error) throw new Error(error.message)
 
-        await supabase.from('venta_items').insert(items.map(i => ({ ...i, venta_id: data.id })))
-        await supabase.from('movimientos').insert({
+      // Paralelizar insert de items y movimiento (no dependen entre si)
+      await Promise.all([
+        supabase.from('venta_items').insert(items.map(i => ({ ...i, venta_id: data.id }))),
+        supabase.from('movimientos').insert({
           descripcion: `Venta ${nroFinal} — ${venta.cliente_nombre}`,
-          tipo: 'ingreso', categoria_nombre: 'Ventas',
-          monto: venta.total, fecha: venta.fecha,
-          venta_id: data.id, org_id: orgId!,
-        })
-        nuevaVenta.id = data.id
-        nuevaVenta.nro_factura = nroFinal
-      } catch (err: any) {
-        throw err
-      }
+          tipo: 'ingreso',
+          categoria_nombre: 'Ventas',
+          monto: venta.total,
+          fecha: venta.fecha,
+          venta_id: data.id,
+          org_id: orgId!,
+        }),
+      ])
+      nuevaVenta.id = data.id
+      nuevaVenta.nro_factura = nroFinal
     } else {
-      // Guardar venta completa con items en la cola de sync
-      await saveLocal('ventas', {...nuevaVenta, venta_items: items}, 'insert')
-      // Guardar también cada item en localStorage como backup
+      await saveLocal('ventas', { ...nuevaVenta, venta_items: items }, 'insert')
       try {
-        const pending = JSON.parse(localStorage.getItem('pending_venta_items') || '[]')
-        pending.push({...nuevaVenta, venta_items: items})
+        const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
+        pending.push({ ...nuevaVenta, venta_items: items })
         localStorage.setItem('sf_venta_items', JSON.stringify(pending))
       } catch {}
     }
