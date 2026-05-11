@@ -2,6 +2,15 @@
 import { createClient } from '@/lib/supabase/client'
 import { getPendingSync, markSynced, getLocalDB } from '@/lib/db/indexeddb'
 
+type PendingItem = {
+  id: string
+  tabla: string
+  recordId: string
+  operacion: 'insert' | 'update' | 'delete'
+  data: Record<string, unknown> & { venta_items?: unknown[]; syncStatus?: string; localTimestamp?: number }
+  timestamp: number
+}
+
 class SyncManager {
   private supabase = createClient()
   private syncing = false
@@ -18,18 +27,18 @@ class SyncManager {
     return typeof navigator !== 'undefined' && navigator.onLine
   }
 
-  async sync() {
+  async sync(): Promise<void> {
     if (this.syncing || !this.isOnline) return
     this.syncing = true
-    console.log('[SyncManager] Iniciando sync...')
     try {
+      // pushFirst → asegura que la cola local se vacie antes de pull
       await this.pushToSupabase()
       await this.pullFromSupabase()
-      console.log('[SyncManager] Sync completo')
-      // Notificar a la app que el sync terminó
       window.dispatchEvent(new Event('syncCompleted'))
     } catch (err) {
       console.error('[SyncManager] Error:', err)
+      // Emitir igualmente para que listeners no queden colgados
+      window.dispatchEvent(new Event('syncCompleted'))
     } finally {
       this.syncing = false
     }
@@ -47,57 +56,74 @@ class SyncManager {
         this.supabase.from('movimientos').select('*').eq('org_id', orgId).order('fecha', { ascending: false }).limit(200),
       ])
 
+      // Transaccion unica + escritura paralela
       const tx = db.transaction(['productos', 'ventas', 'movimientos'], 'readwrite')
-      await Promise.all([
-        ...(productos ?? []).map(p => tx.objectStore('productos').put({ ...p, syncStatus: 'synced' })),
-        ...(ventas ?? []).map(v => tx.objectStore('ventas').put({ ...v, syncStatus: 'synced' })),
-        ...(movimientos ?? []).map(m => tx.objectStore('movimientos').put({ ...m, syncStatus: 'synced' })),
-        tx.done,
-      ])
+      const ops: Promise<unknown>[] = []
+      const prodStore = tx.objectStore('productos')
+      const ventaStore = tx.objectStore('ventas')
+      const movStore = tx.objectStore('movimientos')
+
+      for (const p of productos ?? []) ops.push(prodStore.put({ ...p, syncStatus: 'synced' }))
+      for (const v of ventas ?? []) ops.push(ventaStore.put({ ...v, syncStatus: 'synced' }))
+      for (const m of movimientos ?? []) ops.push(movStore.put({ ...m, syncStatus: 'synced' }))
+
+      await Promise.all([...ops, tx.done])
     } catch (err) {
       console.error('[SyncManager] Error en pull:', err)
     }
   }
 
   private async pushToSupabase() {
-    const pending = await getPendingSync()
+    const pending = await getPendingSync() as PendingItem[]
     if (!pending.length) return
 
     const orgId = localStorage.getItem('sf_org_id')
     if (!orgId) return
 
-    for (const item of pending) {
-      try {
-        const { syncStatus, localTimestamp, venta_items, ...cleanData } = item.data
+    // Separar ventas (necesitan secuencia por nro_factura) del resto (paralelizables)
+    const ventaItems = pending.filter(p => p.tabla === 'ventas')
+    const otrosItems = pending.filter(p => p.tabla !== 'ventas')
 
-        if (item.operacion === 'delete') {
-          await this.supabase.from(item.tabla).delete().eq('id', item.recordId)
-          await markSynced(item.tabla, item.recordId, item.id)
-          continue
-        }
+    // Paralelizar items que no son ventas
+    await Promise.all(otrosItems.map(item => this.pushItem(item, orgId)))
 
-        if (item.tabla === 'ventas') {
-          // Manejo especial para ventas con items
-          const ventaData = { ...cleanData, org_id: orgId }
-          delete ventaData.venta_items
+    // Ventas en serie (para mantener correlativo de nro_factura)
+    for (const item of ventaItems) {
+      await this.pushItem(item, orgId)
+    }
+  }
 
-          // Obtener número de factura real
-          const { count } = await this.supabase
-            .from('ventas').select('*', { count: 'exact', head: true })
-          const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
-          ventaData.nro_factura = nroFinal
+  private async pushItem(item: PendingItem, orgId: string) {
+    try {
+      const { syncStatus, localTimestamp, venta_items, ...cleanData } = item.data
 
-          const { data: ventaCreada, error: ventaErr } = await this.supabase
-            .from('ventas').upsert(ventaData, { onConflict: 'id', ignoreDuplicates: true }).select().single()
-          if (ventaErr) throw new Error(ventaErr.message)
+      if (item.operacion === 'delete') {
+        await this.supabase.from(item.tabla).delete().eq('id', item.recordId)
+        await markSynced(item.tabla, item.recordId, item.id)
+        return
+      }
 
-          // Insertar items si existen
-          if (venta_items?.length && ventaCreada) {
-            await this.supabase.from('venta_items').insert(
-              venta_items.map((i: any) => ({ ...i, venta_id: ventaCreada.id }))
-            )
-            // Registrar movimiento de caja
-            await this.supabase.from('movimientos').insert({
+      if (item.tabla === 'ventas') {
+        const ventaData = { ...cleanData, org_id: orgId } as Record<string, unknown>
+        delete ventaData.venta_items
+
+        const { count } = await this.supabase
+          .from('ventas').select('*', { count: 'exact', head: true })
+        const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
+        ventaData.nro_factura = nroFinal
+
+        const { data: ventaCreada, error: ventaErr } = await this.supabase
+          .from('ventas').upsert(ventaData, { onConflict: 'id', ignoreDuplicates: true }).select().single()
+        if (ventaErr) throw new Error(ventaErr.message)
+
+        if (Array.isArray(venta_items) && venta_items.length && ventaCreada) {
+          const items = venta_items as Array<Record<string, unknown>>
+          // Items y movimiento en paralelo
+          await Promise.all([
+            this.supabase.from('venta_items').insert(
+              items.map(i => ({ ...i, venta_id: ventaCreada.id }))
+            ),
+            this.supabase.from('movimientos').insert({
               descripcion: `Venta ${nroFinal} — ${ventaData.cliente_nombre}`,
               tipo: 'ingreso',
               categoria_nombre: 'Ventas',
@@ -105,17 +131,16 @@ class SyncManager {
               fecha: ventaData.fecha,
               venta_id: ventaCreada.id,
               org_id: orgId,
-            })
-          }
-        } else {
-          // Resto de tablas (productos, movimientos, etc)
-          await this.supabase.from(item.tabla).upsert({ ...cleanData, org_id: orgId })
+            }),
+          ])
         }
-
-        await markSynced(item.tabla, item.recordId, item.id)
-      } catch (err) {
-        console.error(`[SyncManager] Error sincronizando ${item.tabla}:`, err)
+      } else {
+        await this.supabase.from(item.tabla).upsert({ ...cleanData, org_id: orgId })
       }
+
+      await markSynced(item.tabla, item.recordId, item.id)
+    } catch (err) {
+      console.error(`[SyncManager] Error sincronizando ${item.tabla}:`, err)
     }
   }
 }

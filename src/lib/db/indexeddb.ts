@@ -2,11 +2,11 @@ import { openDB, IDBPDatabase } from 'idb'
 
 export type SyncStatus = 'synced' | 'pending' | 'conflict'
 
-let db: IDBPDatabase | null = null
+let dbPromise: Promise<IDBPDatabase> | null = null
 
-export async function getLocalDB() {
-  if (db) return db
-  db = await openDB('stockflow-local', 1, {
+export function getLocalDB(): Promise<IDBPDatabase> {
+  if (dbPromise) return dbPromise
+  dbPromise = openDB('stockflow-local', 1, {
     upgrade(db) {
       const productos = db.createObjectStore('productos', { keyPath: 'id' })
       productos.createIndex('orgId', 'org_id')
@@ -24,30 +24,36 @@ export async function getLocalDB() {
       syncQueue.createIndex('tabla', 'tabla')
     },
   })
-  return db
+  return dbPromise
 }
 
 export async function saveLocal(
   tabla: string,
-  data: any,
+  data: { id: string; [k: string]: unknown },
   operacion: 'insert' | 'update' | 'delete' = 'insert'
 ) {
   const database = await getLocalDB()
   const record = { ...data, syncStatus: 'pending', localTimestamp: Date.now() }
-  await database.put(tabla as any, record)
-  await database.put('sync_queue', {
-    id: `${tabla}_${data.id}_${Date.now()}`,
-    tabla,
-    recordId: data.id,
-    operacion,
-    data,
-    timestamp: Date.now(),
-  })
+
+  // Una sola transaccion para ambos stores en lugar de dos puts secuenciales
+  const tx = database.transaction([tabla, 'sync_queue'], 'readwrite')
+  await Promise.all([
+    tx.objectStore(tabla).put(record),
+    tx.objectStore('sync_queue').put({
+      id: `${tabla}_${data.id}_${Date.now()}`,
+      tabla,
+      recordId: data.id,
+      operacion,
+      data,
+      timestamp: Date.now(),
+    }),
+    tx.done,
+  ])
 }
 
 export async function getLocal(tabla: string, orgId: string) {
   const database = await getLocalDB()
-  return database.getAllFromIndex(tabla as any, 'orgId', orgId)
+  return database.getAllFromIndex(tabla, 'orgId', orgId)
 }
 
 export async function getPendingSync() {
@@ -57,9 +63,11 @@ export async function getPendingSync() {
 
 export async function markSynced(tabla: string, id: string, syncQueueId: string) {
   const database = await getLocalDB()
-  const record = await database.get(tabla as any, id)
-  if (record) await database.put(tabla as any, { ...record, syncStatus: 'synced' })
-  await database.delete('sync_queue', syncQueueId)
+  const tx = database.transaction([tabla, 'sync_queue'], 'readwrite')
+  const record = await tx.objectStore(tabla).get(id)
+  if (record) await tx.objectStore(tabla).put({ ...record, syncStatus: 'synced' })
+  await tx.objectStore('sync_queue').delete(syncQueueId)
+  await tx.done
 }
 
 export async function clearLocalDB() {
