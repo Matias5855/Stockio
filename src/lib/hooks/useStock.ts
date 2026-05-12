@@ -8,6 +8,7 @@ export type Producto = {
   org_id: string
   nombre: string
   sku: string
+  talle: string | null
   cantidad: number
   stock_minimo: number
   precio_venta: number
@@ -37,6 +38,7 @@ export function useStock() {
       id: crypto.randomUUID(),
       nombre: p.nombre ?? '',
       sku: p.sku?.trim() || `SKU-${Date.now()}`,
+      talle: p.talle?.toString().trim() || null,
       cantidad: p.cantidad ?? 0,
       stock_minimo: p.stock_minimo ?? 0,
       precio_venta: p.precio_venta ?? 0,

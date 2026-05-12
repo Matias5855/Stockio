@@ -47,6 +47,7 @@ export default function StockPage() {
   const data = {
     nombre: form.nombre,
     sku: form.sku?.trim() || `SKU-${Date.now()}`,
+    talle: form.talle?.trim() || null,
     cantidad: +form.cantidad || 0,
     stock_minimo: +form.stock_minimo || 0,
     precio_venta: +form.precio_venta || 0,
@@ -118,7 +119,7 @@ export default function StockPage() {
                   <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 500 }}>{p.nombre}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95', fontFamily: 'monospace' }}>{p.sku}</td>
-                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{(p as any).talle ?? '—'}</td>
+                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.talle ?? '—'}</td>
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: bajo ? '#E05555' : '#22C97A' }}>{p.cantidad}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.stock_minimo}</td>
                     <td style={{ padding: '12px 14px' }}>{fmt(p.precio_venta)}</td>
