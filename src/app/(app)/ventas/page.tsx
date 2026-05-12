@@ -77,7 +77,7 @@ export default function VentasPage() {
       }, [{
         producto_id: form.producto_id,
         producto_nombre: productoSel
-          ? `${productoSel.nombre}${productoSel.talle ? ` — T: ${productoSel.talle}` : ''}`
+          ? `${productoSel.nombre}${productoSel.talle ? ` — T: ${productoSel.talle}` : ''}${productoSel.color ? ` · ${productoSel.color}` : ''}`
           : '',
         cantidad: +form.cantidad,
         precio_unitario: +form.precio_unitario,
@@ -264,7 +264,7 @@ export default function VentasPage() {
                   <select value={form.producto_id} onChange={e => { const p = productos.find(x => x.id === e.target.value); setForm(f => ({...f, producto_id: e.target.value, precio_unitario: p ? String(p.precio_venta) : f.precio_unitario})) }} style={inp}>
                     <option value="">— Seleccionar —</option>
                     {productos.map(p => (
-                      <option key={p.id} value={p.id}>{p.nombre}{p.talle ? ` — T: ${p.talle}` : ''} (Stock: {p.cantidad})</option>
+                      <option key={p.id} value={p.id}>{p.nombre}{p.talle ? ` — T: ${p.talle}` : ''}{p.color ? ` · ${p.color}` : ''} (Stock: {p.cantidad})</option>
                     ))}
                   </select>
                   <button onClick={() => setScanner(true)} title="Escanear código"
