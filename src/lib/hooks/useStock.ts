@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
 import { syncManager } from '@/lib/sync/syncManager'
+import { debounce } from '@/lib/utils/debounce'
 
 export type Producto = {
   id: string
@@ -81,12 +82,14 @@ export function useStock() {
 
     if (!navigator.onLine) return
 
-    // Suscripcion realtime con cleanup apropiado
+    // Debounce: si llegan multiples cambios en <500ms, hace 1 solo fetch
+    const debouncedFetch = debounce(() => { if (mountedRef.current) fetchProductos() }, 500)
+
     const channel = supabase.channel(`productos_${orgId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, fetchProductos)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, debouncedFetch)
       .subscribe()
 
-    // Listener online: usar await en lugar de evento para evitar race condition
+    // Listener online: await en lugar de evento para evitar race condition
     const onOnline = async () => {
       await syncManager.sync()
       if (mountedRef.current) await fetchProductos()
@@ -94,6 +97,7 @@ export function useStock() {
     window.addEventListener('online', onOnline)
 
     return () => {
+      debouncedFetch.cancel()
       supabase.removeChannel(channel)
       window.removeEventListener('online', onOnline)
     }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
 import { syncManager } from '@/lib/sync/syncManager'
+import { debounce } from '@/lib/utils/debounce'
 
 export type Movimiento = {
   id: string
@@ -75,8 +76,10 @@ export function useMovimientos() {
 
     if (!navigator.onLine) return
 
+    const debouncedFetch = debounce(() => { if (mountedRef.current) fetchMovimientos() }, 500)
+
     const channel = supabase.channel(`movimientos_${orgId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, fetchMovimientos)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, debouncedFetch)
       .subscribe()
 
     const onOnline = async () => {
@@ -86,6 +89,7 @@ export function useMovimientos() {
     window.addEventListener('online', onOnline)
 
     return () => {
+      debouncedFetch.cancel()
       supabase.removeChannel(channel)
       window.removeEventListener('online', onOnline)
     }

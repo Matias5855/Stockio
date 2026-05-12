@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { saveLocal, getLocal } from '@/lib/db/indexeddb'
 import { getOrgId } from '@/lib/supabase/client'
 import { syncManager } from '../sync/syncManager'
+import { debounce } from '@/lib/utils/debounce'
 
 export type VentaItem = {
   producto_id: string | null
@@ -99,8 +100,10 @@ export function useVentas() {
 
     if (!navigator.onLine) return
 
+    const debouncedFetch = debounce(() => { if (mountedRef.current) fetchVentas() }, 500)
+
     const channel = supabase.channel(`ventas_${orgId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, fetchVentas)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, debouncedFetch)
       .subscribe()
 
     const onOnline = async () => {
@@ -110,6 +113,7 @@ export function useVentas() {
     window.addEventListener('online', onOnline)
 
     return () => {
+      debouncedFetch.cancel()
       supabase.removeChannel(channel)
       window.removeEventListener('online', onOnline)
     }
