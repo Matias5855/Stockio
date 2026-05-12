@@ -27,6 +27,7 @@
     "sharp": "^0.34.5",
     "soap": "^1.9.1",
     "xlsx": "^0.18.5",
+    "zod": "^4.4.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
