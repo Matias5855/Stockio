@@ -1,38 +1,61 @@
-// Webhook que MP llama cada vez que hay un evento de pago o suscripción
-// Configurar en MP Dashboard → Notificaciones → Webhooks
+// Webhook que MP llama cada vez que hay un evento de pago o suscripcion.
+// Configurar en MP Dashboard -> Notificaciones -> Webhooks
 // URL: https://stockflow-indol.vercel.app/api/webhook/mp
+//
+// IMPORTANTE — Seguridad:
+// Este endpoint NO usa auth de usuario, lo expone el proxy.ts como publico.
+// La unica defensa contra falsificacion es la firma HMAC (x-signature) que MP
+// envia en cada request. Si MP_WEBHOOK_SECRET no esta configurado o la firma
+// falla, rechazamos con 401 — un atacante podria activar suscripciones gratis.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyMpSignature } from '@/lib/mpSignature'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    // Lazy init: usa service role para webhook (sin auth de usuario)
+    // Leer body como texto para tenerlo intacto si despues queremos firmar
+    // el manifest sobre el cuerpo (futuro). Por ahora MP firma el data.id.
+    const raw = await req.text()
+    let body: { type?: string; data?: { id?: string; metadata?: { tipo?: string } } }
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      return NextResponse.json({ error: 'JSON invalido' }, { status: 400 })
+    }
+    const { type, data } = body
+
+    // ── Verificar firma HMAC ───────────────────────────────────
+    const check = verifyMpSignature({
+      signatureHeader: req.headers.get('x-signature'),
+      requestId: req.headers.get('x-request-id'),
+      dataId: data?.id,
+      secret: process.env.MP_WEBHOOK_SECRET,
+    })
+    if (!check.ok) {
+      console.error('[Webhook MP] Firma invalida:', check.reason)
+      return NextResponse.json({ error: 'Firma invalida' }, { status: 401 })
+    }
+
+    // Recien ahora podemos confiar en el payload
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
     const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN!
 
-    const body = await req.json()
-    const { type, data } = body
-
-    console.log('Webhook MP recibido:', type, data)
-
     // ── PAGO APROBADO ────────────────────────────────────────
-    if (type === 'payment') {
+    if (type === 'payment' && data?.id) {
       const paymentRes = await fetch(`https://api.mercadopago.com/v1/payments/${data.id}`, {
         headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
       })
       const payment = await paymentRes.json()
 
       if (payment.status === 'approved') {
-        // Obtener org_id desde external_reference
         const orgId = payment.external_reference
 
-        // Registrar pago
         await supabase.from('pagos').insert({
           org_id: orgId,
           mp_payment_id: String(payment.id),
@@ -42,7 +65,6 @@ export async function POST(req: NextRequest) {
           metadata: payment,
         })
 
-        // Activar/renovar suscripción
         await supabase.from('suscripciones')
           .update({
             estado: 'activa',
@@ -51,40 +73,12 @@ export async function POST(req: NextRequest) {
           })
           .eq('org_id', orgId)
       }
-    }
 
-    // ── EVENTO DE SUSCRIPCIÓN ────────────────────────────────
-    if (type === 'subscription_preapproval') {
-      const suscRes = await fetch(`https://api.mercadopago.com/preapproval/${data.id}`, {
-        headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
-      })
-      const susc = await suscRes.json()
-      const orgId = susc.external_reference
-
-      const estadoMap: Record<string, string> = {
-        authorized: 'activa',
-        paused:     'pausada',
-        cancelled:  'cancelada',
-        pending:    'trial',
-      }
-
-      await supabase.from('suscripciones')
-        .update({ estado: estadoMap[susc.status] ?? 'vencida' })
-        .eq('mp_suscripcion_id', data.id)
-    }
-
-    // ── PAGO DE CUOTA DIGITAL (link MP) ──────────────────────
-    if (type === 'payment' && data?.metadata?.tipo === 'cuota_cliente') {
-      const paymentRes = await fetch(`https://api.mercadopago.com/v1/payments/${data.id}`, {
-        headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
-      })
-      const payment = await paymentRes.json()
-
-      if (payment.status === 'approved') {
+      // ── PAGO DE CUOTA DIGITAL (link MP) ────────────────────
+      if (payment.metadata?.tipo === 'cuota_cliente') {
         const cuotaId = payment.metadata?.cuota_pago_id
 
-        if (cuotaId) {
-          // Marcar cuota como pagada
+        if (payment.status === 'approved' && cuotaId) {
           await supabase.from('cuota_pagos').update({
             estado: 'pagada',
             fecha_pago: new Date().toISOString().split('T')[0],
@@ -92,7 +86,6 @@ export async function POST(req: NextRequest) {
             metodo_pago: 'mp',
           }).eq('id', cuotaId)
 
-          // Actualizar monto pagado en cuota_venta
           const { data: cuotaPago } = await supabase
             .from('cuota_pagos').select('cuota_venta_id, monto').eq('id', cuotaId).single()
 
@@ -117,9 +110,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── EVENTO DE SUSCRIPCION ────────────────────────────────
+    if (type === 'subscription_preapproval' && data?.id) {
+      const suscRes = await fetch(`https://api.mercadopago.com/preapproval/${data.id}`, {
+        headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
+      })
+      const susc = await suscRes.json()
+
+      const estadoMap: Record<string, string> = {
+        authorized: 'activa',
+        paused:     'pausada',
+        cancelled:  'cancelada',
+        pending:    'trial',
+      }
+
+      await supabase.from('suscripciones')
+        .update({ estado: estadoMap[susc.status] ?? 'vencida' })
+        .eq('mp_suscripcion_id', data.id)
+    }
+
     return NextResponse.json({ ok: true })
-  } catch (err: any) {
-    console.error('Error webhook MP:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    // Nunca exponer detalles del error al exterior — solo loguear server-side.
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[Webhook MP] Error procesando:', message)
+    return NextResponse.json({ error: 'Error procesando webhook' }, { status: 500 })
   }
 }

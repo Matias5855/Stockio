@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { parseBody, RegisterInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
+import { rateLimit, getClientIp } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit por IP: 5 registros cada 10 minutos.
+    // Combinado con el captcha de Supabase (si esta activado) evita bots.
+    const ip = getClientIp(req)
+    const rl = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos. Esperá unos minutos.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      )
+    }
     // Lazy init: evita errores en build cuando las env vars no estan disponibles
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,14 +25,8 @@ export async function POST(req: NextRequest) {
     )
     const resend = new Resend(process.env.RESEND_API_KEY)
 
-    const { nombre, negocio, email, password, plan = 'normal' } = await req.json()
-
-    if (!nombre || !negocio || !email || !password) {
-      return NextResponse.json({ error: 'Todos los campos son requeridos' }, { status: 400 })
-    }
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, { status: 400 })
-    }
+    // Validacion con Zod: rechaza body invalido con mensaje claro
+    const { nombre, negocio, email, password, plan } = await parseBody(req, RegisterInputSchema)
 
     // 1. Crear usuario
     const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
@@ -65,11 +71,15 @@ export async function POST(req: NextRequest) {
     const trialFinStr = trialFin.toLocaleDateString('es-AR')
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
+    // Escapar todos los strings que vienen del usuario antes de interpolarlos en HTML
+    const primerNombreSafe = escapeHtml(nombre.split(' ')[0])
+    const negocioSafe = escapeHtml(negocio)
+
     try {
       await resend.emails.send({
         from: 'StockFlow <onboarding@resend.dev>',
         to: email,
-        subject: `¡Bienvenido a StockFlow, ${nombre.split(' ')[0]}! 🎉`,
+        subject: `¡Bienvenido a StockFlow, ${primerNombreSafe}! 🎉`,
         html: `
 <!DOCTYPE html>
 <html lang="es">
@@ -86,10 +96,10 @@ export async function POST(req: NextRequest) {
     <!-- Body -->
     <div style="padding:40px;">
       <h2 style="color:#18181C;margin:0 0 8px;font-size:22px;font-weight:700;">
-        ¡Bienvenido, ${nombre.split(' ')[0]}! 👋
+        ¡Bienvenido, ${primerNombreSafe}! 👋
       </h2>
       <p style="color:#6B6B80;font-size:15px;line-height:1.6;margin:0 0 24px;">
-        Tu cuenta para <strong style="color:#18181C;">${negocio}</strong> está lista. Tenés <strong style="color:#7C6FE0;">30 días gratis</strong> para probar todo sin límites.
+        Tu cuenta para <strong style="color:#18181C;">${negocioSafe}</strong> está lista. Tenés <strong style="color:#7C6FE0;">30 días gratis</strong> para probar todo sin límites.
       </p>
 
       <!-- Info box -->
@@ -146,7 +156,12 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, org_id: org.id, org_name: org.name })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[Register] Error:', message)
+    return NextResponse.json({ error: 'Error procesando el registro' }, { status: 500 })
   }
 }

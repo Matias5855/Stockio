@@ -1,10 +1,8 @@
 'use client'
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { saveLocal, getLocal } from '@/lib/db/indexeddb'
-import { getOrgId } from '@/lib/supabase/client'
-import { syncManager } from '../sync/syncManager'
-import { debounce } from '@/lib/utils/debounce'
+import { saveLocal } from '@/lib/db/indexeddb'
+import { useTableSync } from './useTableSync'
 
 export type VentaItem = {
   producto_id: string | null
@@ -29,58 +27,22 @@ export type Venta = {
 }
 
 export function useVentas() {
-  const supabase = useMemo(() => createClient(), [])
-  const [ventas, setVentas] = useState<Venta[]>([])
-  const [loading, setLoading] = useState(true)
-  const [orgId, setOrgId] = useState<string | null>(null)
-  const mountedRef = useRef(true)
+  const {
+    data: ventas,
+    loading,
+    orgId,
+    setData: setVentas,
+    refetch: fetchVentas,
+  } = useTableSync<Venta>({
+    table: 'ventas',
+    select: '*, venta_items(*)',
+    order: { column: 'fecha', ascending: false },
+    localSort: (a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''),
+  })
 
-  useEffect(() => {
-    mountedRef.current = true
-    getOrgId().then(id => { if (id && mountedRef.current) setOrgId(id) })
-    return () => { mountedRef.current = false }
-  }, [])
+  const supabase = createClient()
 
-  const fetchVentas = useCallback(async () => {
-    if (!orgId) return
-    setLoading(true)
-
-    if (!navigator.onLine) {
-      try {
-        const local = await getLocal('ventas', orgId)
-        if (mountedRef.current) {
-          setVentas(local.sort((a: Venta, b: Venta) => b.fecha?.localeCompare(a.fecha)))
-        }
-      } catch (err) {
-        console.warn('[useVentas] error leyendo local:', err)
-      }
-      if (mountedRef.current) setLoading(false)
-      return
-    }
-
-    try {
-      const { data } = await supabase
-        .from('ventas').select('*, venta_items(*)')
-        .eq('org_id', orgId)
-        .order('fecha', { ascending: false })
-      if (data) {
-        if (mountedRef.current) setVentas(data)
-        // Paralelizar guardado en IndexedDB
-        await Promise.all(
-          data.map(v => saveLocal('ventas', v, 'update').catch(() => {}))
-        )
-      }
-    } catch (err) {
-      console.warn('[useVentas] fetch fallo, usando local:', err)
-      try {
-        const local = await getLocal('ventas', orgId)
-        if (mountedRef.current) setVentas(local)
-      } catch {}
-    }
-    if (mountedRef.current) setLoading(false)
-  }, [orgId, supabase])
-
-  // Recuperar ventas offline pendientes del localStorage
+  // Recuperar ventas offline pendientes del localStorage (backup adicional al IndexedDB)
   useEffect(() => {
     try {
       const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
@@ -92,32 +54,7 @@ export function useVentas() {
         })
       }
     } catch {}
-  }, [])
-
-  useEffect(() => {
-    if (!orgId) return
-    fetchVentas()
-
-    if (!navigator.onLine) return
-
-    const debouncedFetch = debounce(() => { if (mountedRef.current) fetchVentas() }, 500)
-
-    const channel = supabase.channel(`ventas_${orgId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, debouncedFetch)
-      .subscribe()
-
-    const onOnline = async () => {
-      await syncManager.sync()
-      if (mountedRef.current) await fetchVentas()
-    }
-    window.addEventListener('online', onOnline)
-
-    return () => {
-      debouncedFetch.cancel()
-      supabase.removeChannel(channel)
-      window.removeEventListener('online', onOnline)
-    }
-  }, [orgId, fetchVentas, supabase])
+  }, [setVentas])
 
   const crearVenta = async (
     venta: Omit<Venta, 'id' | 'nro_factura' | 'created_at'>,
@@ -144,7 +81,7 @@ export function useVentas() {
         .from('ventas').insert({ ...venta, org_id: orgId!, nro_factura: nroFinal }).select().single()
       if (error) throw new Error(error.message)
 
-      // Paralelizar insert de items y movimiento (no dependen entre si)
+      // Items + movimiento de caja en paralelo (no dependen entre si)
       await Promise.all([
         supabase.from('venta_items').insert(items.map(i => ({ ...i, venta_id: data.id }))),
         supabase.from('movimientos').insert({

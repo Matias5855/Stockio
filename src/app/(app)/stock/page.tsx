@@ -47,6 +47,8 @@ export default function StockPage() {
   const data = {
     nombre: form.nombre,
     sku: form.sku?.trim() || `SKU-${Date.now()}`,
+    talle: form.talle?.trim() || null,
+    color: form.color?.trim() || null,
     cantidad: +form.cantidad || 0,
     stock_minimo: +form.stock_minimo || 0,
     precio_venta: +form.precio_venta || 0,
@@ -105,7 +107,7 @@ export default function StockPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
-                {['Producto', 'SKU', 'Talle', 'Cantidad', 'Mín.', 'Precio venta', 'Costo', 'Margen', 'Estado', ''].map(h => (
+                {['Producto', 'SKU', 'Talle', 'Color', 'Cantidad', 'Mín.', 'Precio venta', 'Costo', 'Margen', 'Estado', ''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#7A7A95', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{h}</th>
                 ))}
               </tr>
@@ -118,7 +120,8 @@ export default function StockPage() {
                   <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 500 }}>{p.nombre}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95', fontFamily: 'monospace' }}>{p.sku}</td>
-                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{(p as any).talle ?? '—'}</td>
+                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.talle ?? '—'}</td>
+                    <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.color ?? '—'}</td>
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: bajo ? '#E05555' : '#22C97A' }}>{p.cantidad}</td>
                     <td style={{ padding: '12px 14px', color: '#7A7A95' }}>{p.stock_minimo}</td>
                     <td style={{ padding: '12px 14px' }}>{fmt(p.precio_venta)}</td>
@@ -148,7 +151,7 @@ export default function StockPage() {
           <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 28, width: 500 }}>
             <p style={{ margin: '0 0 20px', fontSize: 17, fontWeight: 600 }}>{editing ? 'Editar producto' : 'Nuevo producto'}</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {[['nombre','Nombre','text'],['sku','SKU','text'],['talle','Talle','text'],['cantidad','Cantidad','number'],['stock_minimo','Stock mínimo','number'],['precio_venta','Precio venta','number'],['costo','Costo','number']].map(([k,l,t]) => (
+              {[['nombre','Nombre','text'],['sku','SKU','text'],['talle','Talle','text'],['color','Color','text'],['cantidad','Cantidad','number'],['stock_minimo','Stock mínimo','number'],['precio_venta','Precio venta','number'],['costo','Costo','number']].map(([k,l,t]) => (
                 <div key={k}>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95' }}>{l}</p>
                   <input type={t} value={(form as any)[k]} onChange={e => setForm(p => ({...p, [k]: e.target.value}))} style={inp} />

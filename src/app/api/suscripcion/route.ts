@@ -1,11 +1,15 @@
 // POST /api/suscripcion — Crea suscripción en Mercado Pago
 // GET  /api/suscripcion — Obtiene estado actual del plan
+//
+// Solo el owner puede cambiar el plan de la org. Cualquier miembro puede leer el estado.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { requireOrgMember, requireRole, AuthError } from '@/lib/auth/requireUser'
+import { parseBody, SuscripcionInputSchema, ValidationError } from '@/lib/schemas'
+
+export const dynamic = 'force-dynamic'
 
 const MP_BASE = 'https://api.mercadopago.com'
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN!
 
 const PLANES_MP = {
   pro: {
@@ -15,7 +19,7 @@ const PLANES_MP = {
       frequency_type: 'months',
       transaction_amount: 9990,
       currency_id: 'ARS',
-      free_trial: { frequency: 1, frequency_type: 'months' }, // 30 días gratis
+      free_trial: { frequency: 1, frequency_type: 'months' },
     },
   },
   business: {
@@ -30,20 +34,15 @@ const PLANES_MP = {
   },
 }
 
-// ── GET: obtener estado del plan actual ──────────────────────
+// ── GET: estado del plan actual (cualquier miembro de la org) ─────
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-    const { data: profile } = await supabase
-      .from('profiles').select('org_id').eq('id', user.id).single()
+    const { supabase, profile } = await requireOrgMember()
 
     const { data: suscripcion } = await supabase
       .from('suscripciones')
       .select('*, planes(*)')
-      .eq('org_id', profile?.org_id)
+      .eq('org_id', profile.org_id)
       .single()
 
     // Verificar si el trial venció
@@ -58,28 +57,25 @@ export async function GET() {
     }
 
     return NextResponse.json(suscripcion)
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[Suscripcion GET] Error:', message)
+    return NextResponse.json({ error: 'Error obteniendo suscripcion' }, { status: 500 })
   }
 }
 
-// ── POST: crear suscripción en MP ────────────────────────────
+// ── POST: crear suscripción en MP (solo owner) ────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const { supabase, profile } = await requireRole(['owner'])
+    const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN!
 
-    const { plan_id, payer_email } = await req.json()
+    const { plan_id, payer_email } = await parseBody(req, SuscripcionInputSchema)
 
-    if (!['pro', 'business'].includes(plan_id)) {
-      return NextResponse.json({ error: 'Plan inválido' }, { status: 400 })
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles').select('org_id, organizations(name)').eq('id', user.id).single()
-
-    const planConfig = PLANES_MP[plan_id as 'pro' | 'business']
+    const planConfig = PLANES_MP[plan_id]
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
     // 1. Crear plan en MP (si no existe)
@@ -109,19 +105,20 @@ export async function POST(req: NextRequest) {
         payer_email,
         back_url: `${appUrl}/dashboard?suscripcion=ok`,
         reason: planConfig.reason,
-        external_reference: profile?.org_id, // Para identificar en el webhook
+        external_reference: profile.org_id,
       }),
     })
 
     const suscData = await suscRes.json()
 
     if (!suscData.id) {
-      throw new Error(suscData.message ?? 'Error creando suscripción en MP')
+      console.error('[Suscripcion POST] MP no devolvio id:', suscData.message ?? suscData)
+      return NextResponse.json({ error: 'Error creando suscripcion' }, { status: 502 })
     }
 
     // 3. Guardar en Supabase
     await supabase.from('suscripciones').upsert({
-      org_id: profile?.org_id,
+      org_id: profile.org_id,
       plan_id,
       estado: 'trial',
       mp_suscripcion_id: suscData.id,
@@ -129,14 +126,21 @@ export async function POST(req: NextRequest) {
       trial_fin: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
     }, { onConflict: 'org_id' })
 
-    // 4. Devolver la URL de pago de MP para redirigir al usuario
     return NextResponse.json({
       ok: true,
-      init_point: suscData.init_point, // URL donde el usuario ingresa su tarjeta
+      init_point: suscData.init_point,
       suscripcion_id: suscData.id,
     })
 
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[Suscripcion POST] Error:', message)
+    return NextResponse.json({ error: 'Error creando suscripcion' }, { status: 500 })
   }
 }

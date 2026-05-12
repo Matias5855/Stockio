@@ -5,7 +5,7 @@
 SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio es una `organization`. Desarrollado para ser vendido como producto con suscripción mensual.
 
 ## Stack
-- **Frontend:** Next.js 14 (App Router) + React + TypeScript
+- **Frontend:** Next.js 16 (App Router, Turbopack) + React 19 + TypeScript
 - **Estilos:** CSS-in-JS con objetos de estilo inline (NO Tailwind en componentes)
 - **Base de datos:** Supabase (PostgreSQL + Auth + Storage + Realtime)
 - **Deploy:** Vercel (región gru1 - São Paulo)
@@ -13,6 +13,7 @@ SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio 
 - **Pagos:** Mercado Pago (suscripciones recurrentes + QR)
 - **PDF:** jsPDF + jspdf-autotable
 - **Excel:** xlsx
+- **Validación:** Zod (schemas en `src/lib/schemas`)
 - **Offline:** IndexedDB (idb) + Service Worker manual + SyncManager
 - **Scanner:** @undecaf/zbar-wasm + BarcodeDetector nativo
 
@@ -21,24 +22,32 @@ SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio 
 - RLS activado en todas las tablas — los usuarios solo ven sus datos
 - `get_org_id()` es una función SQL SECURITY DEFINER que retorna el org_id del usuario autenticado
 - El `org_id` se cachea en `localStorage` como `sf_org_id`
-- El nombre del negocio se cachea como `sf_org_name`
+- El nombre del negocio se cachea como `sf_org_nombre` (legacy: `sf_org_name` también aparece en register/page.tsx — pendiente unificar)
 
 ## Navegación
 - La app usa navegación SPA client-side (NO router de Next.js para las páginas internas)
-- El layout `src/app/(app)/layout.tsx` maneja un estado `page` y renderiza el componente directamente
+- El layout `src/app/(app)/layout.tsx` maneja un estado `page` y renderiza el componente activo via lazy load
 - Los botones del sidebar llaman a `setPage('nombre-pagina')`
-- Las páginas están importadas directamente en el layout en el objeto `PAGES`
+- Las páginas se cargan con `next/dynamic` — solo se monta la página activa
+
+## Performance
+- Hooks usan debounce de 500ms para realtime (evita fetchs redundantes)
+- SyncManager usa delta sync (updated_at) + full pull cada 24h
+- Páginas se cargan con lazy load (next/dynamic)
+- Cliente Supabase es singleton + getOrgId() cacheado
+- Hook genérico `useTableSync<T>()` unifica el patrón fetch+offline+realtime para los hooks de datos
 
 ## Módulos implementados
 - **Dashboard** — métricas, gráficos, alertas stock bajo
-- **Stock/Inventario** — ABM productos con SKU, talle, costo, precio, proveedor
+- **Stock/Inventario** — ABM productos con SKU, talle, color, costo, precio, proveedor
 - **Ventas** — registro, facturación, escáner código de barras, PDF, email
 - **Finanzas** — ingresos/egresos, flujo de caja
 - **Archivos** — upload a Supabase Storage
 - **Cuotas** — planes de pago manual y digital con MP
 - **Configuración** — datos del negocio, conexión MP OAuth
 - **Empleados** — solo plan Premium, invitación por email, roles y permisos
-- **Búsqueda global** — Ctrl+K, busca en productos/ventas/movimientos
+- **Búsqueda global** — Ctrl+K, busca en productos/ventas/movimientos (integrada en layout)
+- **Notificaciones** — campana en header (integrada en layout)
 
 ## Planes y suscripción
 - **StockFlow Normal** — $9.990 ARS/mes, 1 usuario
@@ -51,7 +60,7 @@ SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio 
 ```
 organizations     — datos del negocio (nombre, cuit, mp_access_token, etc.)
 profiles          — usuarios vinculados a una org (role, permisos JSONB)
-productos         — inventario (org_id, sku, talle, cantidad, stock_minimo)
+productos         — inventario (org_id, sku, talle, color, cantidad, stock_minimo)
 ventas            — cabecera de venta
 venta_items       — líneas de cada venta
 movimientos       — flujo de caja (ingreso/egreso)
@@ -65,14 +74,14 @@ historial         — log de cambios por usuario
 
 ## Offline
 - `src/lib/db/indexeddb.ts` — base de datos local con idb
-- `src/lib/sync/syncManager.ts` — sube cambios locales al reconectarse
-- Los hooks `useStock`, `useVentas`, `useMovimientos` verifican `navigator.onLine`
+- `src/lib/sync/syncManager.ts` — sube cambios locales al reconectarse + delta pull
+- Los hooks usan `useTableSync<T>()` que verifica `navigator.onLine` internamente
 - Si offline: lee de IndexedDB y encola en `sync_queue`
 - Si online: escribe en Supabase Y guarda copia en IndexedDB
 - El SW en `public/sw.js` cachea assets estáticos
 
 ## Seguridad
-- `src/middleware.ts` — auth + CORS + redirect guard + security headers
+- `src/proxy.ts` — auth + CORS + redirect guard + security headers (renombrado desde `middleware.ts` en Next 16)
 - `vercel.json` — headers de seguridad incluyendo CSP
 - `Permissions-Policy` NO incluye `camera=()` para permitir el escáner
 - RLS en todas las tablas con políticas separadas por operación
@@ -117,7 +126,6 @@ https://stockflow-indol.vercel.app
 
 ## Repositorio
 https://github.com/Matias5855/stockflow
-```
 
 ## Pendiente por implementar
 - [ ] Paywall integrado en layout cuando trial vence
@@ -126,5 +134,5 @@ https://github.com/Matias5855/stockflow
 - [ ] Historial de cambios visible en UI
 - [ ] Dashboard de admin para el dueño de StockFlow
 - [ ] Exportar Excel/PDF (código en `src/lib/exportar.ts`, falta integrar botones)
-- [ ] Notificaciones (componente creado, falta integrar en layout)
-- [ ] Búsqueda global (componente creado, falta integrar en layout)
+- [ ] Unificar `sf_org_name` y `sf_org_nombre` en localStorage
+- [ ] Seguridad: verificar firma de webhook MP, sanitizar emails, rate limiting, chequeo de rol en API routes
