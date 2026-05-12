@@ -1,16 +1,19 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'StockFlow — Gestión inteligente para tu negocio',
   description: 'Controlá tu stock, ventas, caja y archivos desde un solo lugar.',
   manifest: '/manifest.json',
-  themeColor: '#7C6FE0',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'StockFlow',
   },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#7C6FE0',
 }
 
 export default function RootLayout({children,}: {children: React.ReactNode}) {

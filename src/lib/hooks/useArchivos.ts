@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export type Archivo = {
@@ -16,41 +16,63 @@ export type Archivo = {
 const BUCKET = 'stockflow-archivos'
 
 export function useArchivos() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [archivos, setArchivos] = useState<Archivo[]>([])
   const [loading, setLoading] = useState(true)
+  const mountedRef = useRef(true)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase.from('archivos').select('*').order('created_at', { ascending: false })
-    const withUrls = await Promise.all(
-      (data ?? []).map(async (a: any) => {
-        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(a.storage_path, 3600)
-        return { ...a, url: urlData?.signedUrl }
-      })
-    )
-    setArchivos(withUrls)
-    setLoading(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
   }, [])
 
-  useEffect(() => { fetch() }, [fetch])
+  const fetchArchivos = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('archivos').select('*').order('created_at', { ascending: false })
+      const lista = (data ?? []) as Archivo[]
+
+      // Generar signed URLs en paralelo (antes era secuencial via Promise.all pero igual ok)
+      const withUrls = await Promise.all(
+        lista.map(async a => {
+          const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(a.storage_path, 3600)
+          return { ...a, url: urlData?.signedUrl }
+        })
+      )
+
+      if (mountedRef.current) setArchivos(withUrls)
+    } catch (err) {
+      console.warn('[useArchivos] fetch fallo:', err)
+    }
+    if (mountedRef.current) setLoading(false)
+  }, [supabase])
+
+  useEffect(() => { fetchArchivos() }, [fetchArchivos])
 
   const uploadArchivo = async (file: File, categoria = 'Sin categoría') => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-    const tipo = ['jpg','jpeg','png','gif','webp'].includes(ext) ? 'img' : ext === 'pdf' ? 'pdf' : 'xls'
+    const tipo = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? 'img' : ext === 'pdf' ? 'pdf' : 'xls'
     const path = `${Date.now()}_${file.name.replace(/\s/g, '_')}`
+
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file)
     if (upErr) throw new Error(upErr.message)
-    const { error: dbErr } = await supabase.from('archivos').insert({ nombre: file.name, storage_path: path, tipo, size_bytes: file.size, categoria })
+
+    const { error: dbErr } = await supabase.from('archivos').insert({
+      nombre: file.name, storage_path: path, tipo, size_bytes: file.size, categoria,
+    })
     if (dbErr) throw new Error(dbErr.message)
-    fetch()
+
+    await fetchArchivos()
   }
 
   const deleteArchivo = async (id: string, path: string) => {
-    await supabase.storage.from(BUCKET).remove([path])
-    await supabase.from('archivos').delete().eq('id', id)
-    fetch()
+    // Paralelizar borrado de storage y BD
+    await Promise.all([
+      supabase.storage.from(BUCKET).remove([path]),
+      supabase.from('archivos').delete().eq('id', id),
+    ])
+    await fetchArchivos()
   }
 
-  return { archivos, loading, uploadArchivo, deleteArchivo, refetch: fetch }
+  return { archivos, loading, uploadArchivo, deleteArchivo, refetch: fetchArchivos }
 }
