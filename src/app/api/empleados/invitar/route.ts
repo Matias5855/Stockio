@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { parseBody, InvitarEmpleadoInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
+import { requireRole, AuthError } from '@/lib/auth/requireUser'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,10 @@ const ROLES_DESC: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
+    // Solo el owner puede invitar empleados — gestionar_usuarios es exclusivo del owner.
+    // Si en el futuro queremos que admin tambien pueda, agregar 'admin' al array.
+    await requireRole(['owner'])
+
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     // Validacion estricta: role contra whitelist, token con regex, email valido
@@ -58,6 +63,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
     if (err instanceof ValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }

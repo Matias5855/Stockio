@@ -5,37 +5,44 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { crearARCAService, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { parseBody, FacturaInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
 
 export const dynamic = 'force-dynamic'
 
+type VentaItemRow = {
+  producto_nombre: string
+  cantidad: number
+  precio_unitario: number
+  subtotal?: number
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const { supabase, profile } = await requireOrgMember()
     const resend = new Resend(process.env.RESEND_API_KEY)
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-    const body = await req.json()
-    const { venta_id, email_cliente, usar_arca = false } = body
+    const { venta_id, email_cliente, usar_arca } = await parseBody(req, FacturaInputSchema)
 
-    // 1. Obtener datos de la venta
+    // 1. Obtener venta y validar que pertenezca a la org del usuario
     const { data: venta } = await supabase
       .from('ventas')
-      .select('*, venta_items(*)')
+      .select('*, venta_items(*), org_id')
       .eq('id', venta_id)
       .single()
 
     if (!venta) return NextResponse.json({ error: 'Venta no encontrada' }, { status: 404 })
+    if (venta.org_id !== profile.org_id) {
+      return NextResponse.json({ error: 'Venta no encontrada' }, { status: 404 })
+    }
 
     // 2. Obtener datos del negocio
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*, organizations(*)')
-      .eq('id', user.id)
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', profile.org_id)
       .single()
 
-    const org = (profile as any)?.organizations
     let cae: string | undefined
     let cae_vencimiento: string | undefined
     let tipo_comprobante: 'A' | 'B' | 'C' | 'X' = 'X'
@@ -48,13 +55,13 @@ export async function POST(req: NextRequest) {
         )
 
         const datosFactura: DatosFactura = {
-          tipo_comprobante: 11, // Factura C (para Monotributistas)
+          tipo_comprobante: 11, // Factura C (Monotributistas)
           nombre_receptor: venta.cliente_nombre ?? 'Consumidor Final',
-          items: (venta.venta_items ?? []).map((i: any) => ({
+          items: ((venta.venta_items ?? []) as VentaItemRow[]).map((i) => ({
             descripcion: i.producto_nombre,
             cantidad: i.cantidad,
             precio_unitario: i.precio_unitario,
-            alicuota_iva: 0, // Monotributista no discrimina IVA
+            alicuota_iva: 0,
           })),
         }
 
@@ -63,14 +70,13 @@ export async function POST(req: NextRequest) {
         cae_vencimiento = resultado.cae_vencimiento
         tipo_comprobante = 'C'
 
-        // Guardar CAE en la venta
         await supabase.from('ventas').update({
           notas: `CAE: ${cae} | Vto: ${cae_vencimiento}`,
         }).eq('id', venta_id)
 
-      } catch (arcaErr: any) {
-        console.error('Error ARCA:', arcaErr.message)
-        // Si ARCA falla, continuamos con ticket interno
+      } catch (arcaErr) {
+        const msg = arcaErr instanceof Error ? arcaErr.message : 'unknown'
+        console.error('[Factura] ARCA fallo:', msg)
       }
     }
 
@@ -81,7 +87,7 @@ export async function POST(req: NextRequest) {
       cliente_nombre: venta.cliente_nombre ?? 'Consumidor Final',
       negocio_nombre: org?.name ?? 'Mi Negocio',
       negocio_cuit: process.env.ARCA_CUIT,
-      items: (venta.venta_items ?? []).map((i: any) => ({
+      items: ((venta.venta_items ?? []) as VentaItemRow[]).map((i) => ({
         nombre: i.producto_nombre,
         cantidad: i.cantidad,
         precio_unitario: i.precio_unitario,
@@ -97,21 +103,28 @@ export async function POST(req: NextRequest) {
 
     const pdfBase64 = await ticketBase64(ticketData)
 
-    // 5. Enviar email con Resend
+    // 5. Enviar email — escapamos todo lo que viene del usuario
     if (email_cliente) {
+      const orgNameSafe = escapeHtml(org?.name ?? 'Mi Negocio')
+      const clienteSafe = escapeHtml(venta.cliente_nombre ?? 'Cliente')
+      const totalSafe = escapeHtml(Number(venta.total).toLocaleString('es-AR'))
+      const caeSafe = cae ? escapeHtml(cae) : ''
+      const caeVtoSafe = cae_vencimiento ? escapeHtml(cae_vencimiento) : ''
+      const nroFacturaSafe = escapeHtml(venta.nro_factura)
+
       await resend.emails.send({
-        from: `${org?.name ?? 'StockFlow'} <onboarding@resend.dev>`,
+        from: `${orgNameSafe} <onboarding@resend.dev>`,
         to: email_cliente,
-        subject: `Tu comprobante ${venta.nro_factura}`,
+        subject: `Tu comprobante ${nroFacturaSafe}`,
         html: `
           <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto;">
             <div style="background: #7C6FE0; padding: 24px; border-radius: 12px 12px 0 0;">
-              <h2 style="color: white; margin: 0;">${org?.name ?? 'Mi Negocio'}</h2>
+              <h2 style="color: white; margin: 0;">${orgNameSafe}</h2>
             </div>
             <div style="background: #f9f9f9; padding: 24px; border-radius: 0 0 12px 12px; border: 1px solid #eee;">
-              <p style="color: #333;">Hola <strong>${venta.cliente_nombre}</strong>,</p>
-              <p style="color: #555;">Adjuntamos el comprobante de tu compra por <strong>$${venta.total.toLocaleString('es-AR')}</strong>.</p>
-              ${cae ? `<p style="color: #555; font-size: 12px;">CAE: ${cae} | Vto: ${cae_vencimiento}</p>` : ''}
+              <p style="color: #333;">Hola <strong>${clienteSafe}</strong>,</p>
+              <p style="color: #555;">Adjuntamos el comprobante de tu compra por <strong>$${totalSafe}</strong>.</p>
+              ${caeSafe ? `<p style="color: #555; font-size: 12px;">CAE: ${caeSafe} | Vto: ${caeVtoSafe}</p>` : ''}
               <p style="color: #999; font-size: 11px; margin-top: 24px;">Generado por StockFlow</p>
             </div>
           </div>
@@ -125,8 +138,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, cae, tipo_comprobante })
 
-  } catch (err: any) {
-    console.error('Error /api/factura:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[Factura] Error:', message)
+    return NextResponse.json({ error: 'Error generando factura' }, { status: 500 })
   }
 }

@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { parseBody, QrRapidoInputSchema, ValidationError } from '@/lib/schemas'
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-    const { monto, descripcion } = await req.json()
-
-    const { data: profile } = await supabase
-      .from('profiles').select('org_id').eq('id', user.id).single()
+    const { supabase, profile } = await requireOrgMember()
+    const { monto, descripcion } = await parseBody(req, QrRapidoInputSchema)
 
     const { data: org } = await supabase
       .from('organizations')
       .select('mp_access_token, mp_connected, name')
-      .eq('id', profile?.org_id).single()
+      .eq('id', profile.org_id).single()
 
     const accessToken = org?.mp_connected && org?.mp_access_token
       ? org.mp_access_token
@@ -50,11 +47,21 @@ export async function POST(req: NextRequest) {
     const data = await res.json()
 
     if (!data.init_point) {
-      return NextResponse.json({ error: data.message ?? 'Error MP' }, { status: 500 })
+      // No incluir el detalle del error de MP en la respuesta — puede leakear info.
+      console.error('[QR rapido] MP no devolvio init_point:', data.message ?? data)
+      return NextResponse.json({ error: 'Error generando link de pago' }, { status: 500 })
     }
 
     return NextResponse.json({ link: data.init_point, preference_id: data.id })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[QR rapido] Error:', message)
+    return NextResponse.json({ error: 'Error generando link de pago' }, { status: 500 })
   }
 }

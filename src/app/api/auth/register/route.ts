@@ -2,11 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { parseBody, RegisterInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
+import { rateLimit, getClientIp } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit por IP: 5 registros cada 10 minutos.
+    // Combinado con el captcha de Supabase (si esta activado) evita bots.
+    const ip = getClientIp(req)
+    const rl = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos. Esperá unos minutos.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      )
+    }
     // Lazy init: evita errores en build cuando las env vars no estan disponibles
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

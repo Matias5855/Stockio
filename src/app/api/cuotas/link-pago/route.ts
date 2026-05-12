@@ -1,16 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { parseBody, LinkPagoInputSchema, ValidationError } from '@/lib/schemas'
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-    const { cuota_venta_id, cliente_email, monto, descripcion } = await req.json()
+    const { supabase, profile } = await requireOrgMember()
 
     if (!process.env.MP_ACCESS_TOKEN) {
       return NextResponse.json({ error: 'MP_ACCESS_TOKEN no configurado' }, { status: 500 })
+    }
+
+    const { cuota_venta_id, cliente_email, monto, descripcion } =
+      await parseBody(req, LinkPagoInputSchema)
+
+    // Verificar que la cuota_venta pertenezca a la org del usuario — evita
+    // que un user de otra org genere links contra cuotas ajenas.
+    const { data: cuotaVenta } = await supabase
+      .from('cuotas_ventas')
+      .select('id, org_id')
+      .eq('id', cuota_venta_id)
+      .single()
+
+    if (!cuotaVenta || cuotaVenta.org_id !== profile.org_id) {
+      return NextResponse.json({ error: 'Cuota no encontrada' }, { status: 404 })
     }
 
     const { data: cuotaPago } = await supabase
@@ -51,17 +65,22 @@ export async function POST(req: NextRequest) {
     })
 
     const data = await res.json()
-    console.log('[link-pago] MP response:', JSON.stringify(data))
 
     if (!data.init_point) {
-      return NextResponse.json({ 
-        error: `MP Error: ${data.message || data.error || JSON.stringify(data)}` 
-      }, { status: 500 })
+      console.error('[link-pago] MP no devolvio init_point:', data.message ?? data)
+      return NextResponse.json({ error: 'Error generando link de pago' }, { status: 502 })
     }
 
     return NextResponse.json({ link: data.init_point })
-  } catch (err: any) {
-    console.error('[link-pago] Error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    console.error('[link-pago] Error:', message)
+    return NextResponse.json({ error: 'Error generando link de pago' }, { status: 500 })
   }
 }
