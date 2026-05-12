@@ -8,6 +8,7 @@ import {
   escapeHtml,
   parseBody,
   ValidationError,
+  isValidUuid,
 } from './schemas'
 
 describe('escapeHtml', () => {
@@ -194,6 +195,30 @@ describe('MovimientoSchema', () => {
 
   it('rechaza tipo invalido', () => {
     expect(MovimientoSchema.safeParse({ ...m, tipo: 'transferencia' }).success).toBe(false)
+  })
+})
+
+describe('isValidUuid', () => {
+  it('acepta uuid v4 valido', () => {
+    expect(isValidUuid('f47ac10b-58cc-4372-a567-0e02b2c3d479')).toBe(true)
+  })
+
+  it('rechaza strings no uuid', () => {
+    expect(isValidUuid('abc')).toBe(false)
+    expect(isValidUuid('')).toBe(false)
+    expect(isValidUuid('not-a-uuid-at-all-just-text-here-x')).toBe(false)
+  })
+
+  it('rechaza tipos no string', () => {
+    expect(isValidUuid(null)).toBe(false)
+    expect(isValidUuid(undefined)).toBe(false)
+    expect(isValidUuid(123)).toBe(false)
+    expect(isValidUuid({})).toBe(false)
+  })
+
+  it('rechaza intentos de injection', () => {
+    expect(isValidUuid("'; DROP TABLE users--")).toBe(false)
+    expect(isValidUuid('<script>alert(1)</script>')).toBe(false)
   })
 })
 

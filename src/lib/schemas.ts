@@ -90,7 +90,46 @@ export const MovimientoSchema = z.object({
 }).passthrough()
 export type MovimientoParsed = z.infer<typeof MovimientoSchema>
 
+// ── Mercado Pago / Cobros ───────────────────────────────────────────
+export const QrRapidoInputSchema = z.object({
+  monto: z.number().positive().max(10_000_000),
+  descripcion: z.string().trim().min(1).max(200),
+})
+export type QrRapidoInput = z.infer<typeof QrRapidoInputSchema>
+
+export const SuscripcionInputSchema = z.object({
+  plan_id: z.enum(['pro', 'business']),
+  payer_email: z.string().trim().toLowerCase().email(),
+})
+export type SuscripcionInput = z.infer<typeof SuscripcionInputSchema>
+
+export const LinkPagoInputSchema = z.object({
+  cuota_venta_id: z.string().uuid(),
+  cliente_email: z.string().trim().toLowerCase().email(),
+  monto: z.number().positive().max(10_000_000),
+  descripcion: z.string().trim().min(1).max(200),
+})
+export type LinkPagoInput = z.infer<typeof LinkPagoInputSchema>
+
+export const FacturaInputSchema = z.object({
+  venta_id: z.string().uuid(),
+  email_cliente: z.string().trim().toLowerCase().email().optional(),
+  usar_arca: z.boolean().optional().default(false),
+})
+export type FacturaInput = z.infer<typeof FacturaInputSchema>
+
 // ── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Valida que un string sea un UUID v4 razonable.
+ * Util para sanear valores leidos de localStorage antes de mandarlos al backend.
+ */
+export function isValidUuid(s: unknown): s is string {
+  if (typeof s !== 'string') return false
+  // UUID v4 strict-ish: 8-4-4-4-12 hex
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+}
+
 /**
  * Parsea body de API route, retorna tipo seguro o lanza con mensaje formateado.
  * Uso: const data = await parseBody(req, MySchema)

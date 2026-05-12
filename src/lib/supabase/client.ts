@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isValidUuid } from '@/lib/schemas'
 
 // Singleton: evitar crear multiples clientes en una misma sesion
 let browserClient: SupabaseClient | null = null
@@ -13,6 +14,22 @@ export function createClient(): SupabaseClient {
   return browserClient
 }
 
+/**
+ * Lee sf_org_id de localStorage y valida que sea un UUID. Si no lo es
+ * (manipulado, corrupto), lo borra y retorna null. Asi evitamos enviar
+ * basura al backend en consultas RLS o filtros .eq('org_id', ...).
+ */
+function readCachedOrgId(): string | null {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem('sf_org_id')
+  if (!raw) return null
+  if (!isValidUuid(raw)) {
+    localStorage.removeItem('sf_org_id')
+    return null
+  }
+  return raw
+}
+
 // Cache en memoria + deduplicacion de llamadas concurrentes
 let orgIdCache: string | null = null
 let orgIdPromise: Promise<string | null> | null = null
@@ -22,7 +39,7 @@ export async function getOrgId(): Promise<string | null> {
   if (orgIdPromise) return orgIdPromise
 
   orgIdPromise = (async () => {
-    const cached = typeof window !== 'undefined' ? localStorage.getItem('sf_org_id') : null
+    const cached = readCachedOrgId()
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       orgIdCache = cached
       return cached
