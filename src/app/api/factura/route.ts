@@ -7,10 +7,11 @@ import { crearARCAService, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
+    const resend = new Resend(process.env.RESEND_API_KEY)
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })

@@ -11,6 +11,11 @@ type PendingItem = {
   timestamp: number
 }
 
+type Tabla = 'productos' | 'ventas' | 'movimientos'
+
+// Cada cuanto forzar full pull para limpiar registros borrados que el delta no detecta
+const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24h
+
 class SyncManager {
   private supabase = createClient()
   private syncing = false
@@ -27,47 +32,115 @@ class SyncManager {
     return typeof navigator !== 'undefined' && navigator.onLine
   }
 
-  async sync(): Promise<void> {
+  async sync(opts?: { force?: boolean }): Promise<void> {
     if (this.syncing || !this.isOnline) return
     this.syncing = true
     try {
-      // pushFirst → asegura que la cola local se vacie antes de pull
       await this.pushToSupabase()
-      await this.pullFromSupabase()
+      await this.pullFromSupabase({ force: opts?.force })
       window.dispatchEvent(new Event('syncCompleted'))
     } catch (err) {
       console.error('[SyncManager] Error:', err)
-      // Emitir igualmente para que listeners no queden colgados
       window.dispatchEvent(new Event('syncCompleted'))
     } finally {
       this.syncing = false
     }
   }
 
-  private async pullFromSupabase() {
+  private lastSyncKey(tabla: Tabla) {
+    return `sf_last_sync_${tabla}`
+  }
+
+  private getLastSync(tabla: Tabla): string | null {
+    return localStorage.getItem(this.lastSyncKey(tabla))
+  }
+
+  private setLastSync(tabla: Tabla, iso: string) {
+    localStorage.setItem(this.lastSyncKey(tabla), iso)
+  }
+
+  private shouldFullSync(tabla: Tabla): boolean {
+    const last = this.getLastSync(tabla)
+    if (!last) return true
+    return Date.now() - new Date(last).getTime() > FULL_SYNC_INTERVAL_MS
+  }
+
+  // Trae solo registros modificados desde el ultimo sync (delta).
+  // Si la tabla no tiene updated_at, hace fallback al full pull automaticamente.
+  private async fetchDelta(tabla: Tabla, orgId: string, opts: { full: boolean }): Promise<Array<Record<string, unknown>>> {
+    const since = opts.full ? null : this.getLastSync(tabla)
+    const now = new Date().toISOString()
+
+    const buildSelect = () => {
+      const selectStr = tabla === 'ventas' ? '*, venta_items(*)' : '*'
+      let q = this.supabase.from(tabla).select(selectStr).eq('org_id', orgId)
+      if (tabla === 'productos') q = q.eq('activo', true)
+      if (tabla === 'ventas') q = q.order('fecha', { ascending: false }).limit(100)
+      if (tabla === 'movimientos') q = q.order('fecha', { ascending: false }).limit(200)
+      return q
+    }
+
+    // Intento 1: delta con updated_at
+    if (since) {
+      const { data, error } = await buildSelect().gt('updated_at', since)
+      if (!error) {
+        this.setLastSync(tabla, now)
+        return (data ?? []) as unknown as Array<Record<string, unknown>>
+      }
+      // Si la columna updated_at no existe, hacer full pull
+      if (error.code === '42703' || /updated_at/i.test(error.message)) {
+        console.warn(`[SyncManager] ${tabla} sin updated_at, fallback a full pull`)
+      } else {
+        console.warn(`[SyncManager] Delta ${tabla} fallo:`, error.message)
+      }
+    }
+
+    // Intento 2: full pull
+    const { data, error } = await buildSelect()
+    if (error) {
+      console.error(`[SyncManager] Full pull ${tabla} fallo:`, error.message)
+      return []
+    }
+    this.setLastSync(tabla, now)
+    return (data ?? []) as unknown as Array<Record<string, unknown>>
+  }
+
+  private async pullFromSupabase(opts?: { force?: boolean }) {
     try {
       const db = await getLocalDB()
       const orgId = localStorage.getItem('sf_org_id')
       if (!orgId) return
 
-      const [{ data: productos }, { data: ventas }, { data: movimientos }] = await Promise.all([
-        this.supabase.from('productos').select('*').eq('org_id', orgId).eq('activo', true),
-        this.supabase.from('ventas').select('*, venta_items(*)').eq('org_id', orgId).order('fecha', { ascending: false }).limit(100),
-        this.supabase.from('movimientos').select('*').eq('org_id', orgId).order('fecha', { ascending: false }).limit(200),
+      // Full pull cada 24h para limpiar fantasmas (registros borrados en servidor)
+      const fullProductos = opts?.force || this.shouldFullSync('productos')
+      const fullVentas = opts?.force || this.shouldFullSync('ventas')
+      const fullMovimientos = opts?.force || this.shouldFullSync('movimientos')
+
+      const [productos, ventas, movimientos] = await Promise.all([
+        this.fetchDelta('productos', orgId, { full: fullProductos }),
+        this.fetchDelta('ventas', orgId, { full: fullVentas }),
+        this.fetchDelta('movimientos', orgId, { full: fullMovimientos }),
       ])
 
-      // Transaccion unica + escritura paralela
+      // Si fue full pull → reemplazar todo. Si fue delta → solo actualizar lo modificado.
       const tx = db.transaction(['productos', 'ventas', 'movimientos'], 'readwrite')
       const ops: Promise<unknown>[] = []
       const prodStore = tx.objectStore('productos')
       const ventaStore = tx.objectStore('ventas')
       const movStore = tx.objectStore('movimientos')
 
-      for (const p of productos ?? []) ops.push(prodStore.put({ ...p, syncStatus: 'synced' }))
-      for (const v of ventas ?? []) ops.push(ventaStore.put({ ...v, syncStatus: 'synced' }))
-      for (const m of movimientos ?? []) ops.push(movStore.put({ ...m, syncStatus: 'synced' }))
+      if (fullProductos) ops.push(prodStore.clear())
+      if (fullVentas) ops.push(ventaStore.clear())
+      if (fullMovimientos) ops.push(movStore.clear())
+
+      for (const p of productos) ops.push(prodStore.put({ ...p, syncStatus: 'synced' }))
+      for (const v of ventas) ops.push(ventaStore.put({ ...v, syncStatus: 'synced' }))
+      for (const m of movimientos) ops.push(movStore.put({ ...m, syncStatus: 'synced' }))
 
       await Promise.all([...ops, tx.done])
+
+      const totalDelta = productos.length + ventas.length + movimientos.length
+      console.log(`[SyncManager] Pull OK — ${totalDelta} registros (full: p=${fullProductos} v=${fullVentas} m=${fullMovimientos})`)
     } catch (err) {
       console.error('[SyncManager] Error en pull:', err)
     }
@@ -80,14 +153,12 @@ class SyncManager {
     const orgId = localStorage.getItem('sf_org_id')
     if (!orgId) return
 
-    // Separar ventas (necesitan secuencia por nro_factura) del resto (paralelizables)
+    // Ventas necesitan correlativo de nro_factura → serie. Resto → paralelo.
     const ventaItems = pending.filter(p => p.tabla === 'ventas')
     const otrosItems = pending.filter(p => p.tabla !== 'ventas')
 
-    // Paralelizar items que no son ventas
     await Promise.all(otrosItems.map(item => this.pushItem(item, orgId)))
 
-    // Ventas en serie (para mantener correlativo de nro_factura)
     for (const item of ventaItems) {
       await this.pushItem(item, orgId)
     }
@@ -118,7 +189,6 @@ class SyncManager {
 
         if (Array.isArray(venta_items) && venta_items.length && ventaCreada) {
           const items = venta_items as Array<Record<string, unknown>>
-          // Items y movimiento en paralelo
           await Promise.all([
             this.supabase.from('venta_items').insert(
               items.map(i => ({ ...i, venta_id: ventaCreada.id }))
@@ -142,6 +212,18 @@ class SyncManager {
     } catch (err) {
       console.error(`[SyncManager] Error sincronizando ${item.tabla}:`, err)
     }
+  }
+
+  // Forzar full sync manualmente (util tras cerrar sesion / cambio de org)
+  async fullResync() {
+    return this.sync({ force: true })
+  }
+
+  // Limpiar timestamps de sync (al cerrar sesion)
+  clearSyncState() {
+    localStorage.removeItem(this.lastSyncKey('productos'))
+    localStorage.removeItem(this.lastSyncKey('ventas'))
+    localStorage.removeItem(this.lastSyncKey('movimientos'))
   }
 }
 
