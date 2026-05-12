@@ -1,20 +1,29 @@
 'use client'
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, useMemo, useCallback, createContext, useContext, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { syncManager } from '@/lib/sync/syncManager'
-import ConfiguracionPage from './configuracion/page'
-
-// Importar todas las páginas directamente
-import DashboardPage from './dashboard/page'
-import StockPage from './stock/page'
-import VentasPage from './ventas/page'
-import FinanzasPage from './finanzas/page'
-import ArchivosPage from './archivos/page'
-import CuotasPage from './cuotas/page'
 import BusquedaGlobal from '@/components/BusquedaGlobal'
 import Notificaciones from '@/components/Notificaciones'
 
-// Context de navegación
+// Lazy load de paginas: solo se cargan al visitarlas (reduce bundle inicial)
+const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
+const StockPage        = dynamic(() => import('./stock/page'),        { loading: () => <PageLoader /> })
+const VentasPage       = dynamic(() => import('./ventas/page'),       { loading: () => <PageLoader /> })
+const FinanzasPage     = dynamic(() => import('./finanzas/page'),     { loading: () => <PageLoader /> })
+const ArchivosPage     = dynamic(() => import('./archivos/page'),     { loading: () => <PageLoader /> })
+const CuotasPage       = dynamic(() => import('./cuotas/page'),       { loading: () => <PageLoader /> })
+const ConfiguracionPage = dynamic(() => import('./configuracion/page'), { loading: () => <PageLoader /> })
+
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#7A7A95', fontSize: 13 }}>
+      Cargando…
+    </div>
+  )
+}
+
+// Context de navegacion
 export const NavContext = createContext<{
   page: string
   setPage: (p: string) => void
@@ -29,29 +38,46 @@ const NAV = [
   { id: 'finanzas',  label: 'Finanzas',   icon: '$' },
   { id: 'archivos',  label: 'Archivos',   icon: '⊞' },
   { id: 'cuotas',    label: 'Cuotas',     icon: '⊟' },
-  { id: 'configuracion', label: 'Configuración', icon: '⚙', path: '/configuracion' }
-]
+  { id: 'configuracion', label: 'Configuración', icon: '⚙', path: '/configuracion' },
+] as const
 
-const PAGES: Record<string, React.ReactNode> = {
-  dashboard: <DashboardPage />,
-  stock:     <StockPage />,
-  ventas:    <VentasPage />,
-  finanzas:  <FinanzasPage />,
-  archivos:  <ArchivosPage />,
-  cuotas:    <CuotasPage />,
-  configuracion: <ConfiguracionPage />
+// Mapa de componentes (no de JSX) — solo se renderiza la activa
+const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
+  dashboard: DashboardPage,
+  stock: StockPage,
+  ventas: VentasPage,
+  finanzas: FinanzasPage,
+  archivos: ArchivosPage,
+  cuotas: CuotasPage,
+  configuracion: ConfiguracionPage,
 }
 
+const THEMES = {
+  dark: {
+    bg: '#0F0F12', sidebar: '#13131A', border: 'rgba(255,255,255,0.08)',
+    text: '#F0EFF8', textMuted: '#7A7A95', accent: '#7C6FE0',
+    accentLight: 'rgba(124,111,224,0.15)',
+  },
+  light: {
+    bg: '#F5F5F7', sidebar: '#FFFFFF', border: 'rgba(0,0,0,0.08)',
+    text: '#18181C', textMuted: '#6B6B80', accent: '#5B4FD0',
+    accentLight: 'rgba(91,79,208,0.1)',
+  },
+} as const
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [page, setPage] = useState('dashboard')
   const [isDark, setIsDark] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
+  const [orgNombre, setOrgNombre] = useState('Gestión PyME')
 
+  // Init: sync, listeners online/offline, leer orgNombre (hidratacion-safe)
   useEffect(() => {
     syncManager.init()
     setIsOffline(!navigator.onLine)
+    setOrgNombre(localStorage.getItem('sf_org_nombre') ?? 'Gestión PyME')
 
     const onOnline = () => { setIsOffline(false); syncManager.sync() }
     const onOffline = () => setIsOffline(true)
@@ -63,22 +89,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     await supabase.auth.signOut()
     window.location.href = '/login'
-  }
+  }, [supabase])
 
-  const t = isDark ? {
-    bg: '#0F0F12', sidebar: '#13131A', border: 'rgba(255,255,255,0.08)',
-    text: '#F0EFF8', textMuted: '#7A7A95', accent: '#7C6FE0',
-    accentLight: 'rgba(124,111,224,0.15)',
-  } : {
-    bg: '#F5F5F7', sidebar: '#FFFFFF', border: 'rgba(0,0,0,0.08)',
-    text: '#18181C', textMuted: '#6B6B80', accent: '#5B4FD0',
-    accentLight: 'rgba(91,79,208,0.1)',
-  }
+  const toggleDark = useCallback(() => setIsDark(v => !v), [])
+  const toggleCollapsed = useCallback(() => setCollapsed(v => !v), [])
 
-  const navBtnStyle = (active: boolean): React.CSSProperties => ({
+  // Memoizar tema: solo cambia con isDark
+  const t = useMemo(() => isDark ? THEMES.dark : THEMES.light, [isDark])
+
+  // Memoizar funcion de estilos del nav: solo cambia con tema o collapsed
+  const navBtnStyle = useCallback((active: boolean): React.CSSProperties => ({
     width: '100%',
     display: 'flex',
     alignItems: 'center',
@@ -92,10 +115,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     color: active ? t.accent : t.textMuted,
     fontWeight: active ? 600 : 400,
     fontSize: 13,
-  })
+  }), [collapsed, t])
+
+  // Memoizar value del context: evita re-renders innecesarios de consumers
+  const navValue = useMemo(() => ({ page, setPage }), [page])
+
+  // Solo se monta la pagina activa (lazy + selectivo)
+  const ActivePage = PAGE_COMPONENTS[page] ?? DashboardPage
 
   return (
-    <NavContext.Provider value={{ page, setPage }}>
+    <NavContext.Provider value={navValue}>
       <div style={{ display: 'flex', height: '100vh', background: t.bg, color: t.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: 'hidden', flexDirection: 'column' }}>
 
         {/* Banner offline */}
@@ -106,11 +135,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <header style={{ 
-            padding: '12px 28px', 
+          <header style={{
+            padding: '12px 28px',
             borderBottom: `1px solid ${t.border}`,
-            display: 'flex', 
-            alignItems: 'center', 
+            display: 'flex',
+            alignItems: 'center',
             gap: 16,
             background: t.bg,
             flexShrink: 0,
@@ -118,6 +147,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <BusquedaGlobal onNavegar={setPage} />
             <Notificaciones />
           </header>
+
           {/* SIDEBAR */}
           <aside style={{ width: collapsed ? 60 : 220, background: t.sidebar, borderTop: 'none', borderBottom: 'none', borderLeft: 'none', borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', transition: 'width 0.2s ease', flexShrink: 0, overflow: 'hidden' }}>
 
@@ -125,10 +155,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {!collapsed && (
                 <div>
                   <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: t.accent }}>StockFlow</p>
-                  <p style={{ margin: '2px 0 0', fontSize: 11, color: t.textMuted }}>{localStorage.getItem('sf_org_nombre') ?? 'Gestión PyME'}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: t.textMuted }}>{orgNombre}</p>
                 </div>
               )}
-              <button onClick={() => setCollapsed(v => !v)} style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderLeft: 'none', cursor: 'pointer', color: t.textMuted, padding: 4, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0, fontSize: 18 }}>☰</button>
+              <button onClick={toggleCollapsed} style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderLeft: 'none', cursor: 'pointer', color: t.textMuted, padding: 4, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0, fontSize: 18 }}>☰</button>
             </div>
 
             <nav style={{ flex: 1, padding: '10px 0' }}>
@@ -141,7 +171,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div style={{ padding: collapsed ? '16px 10px' : '16px 20px', borderTop: `1px solid ${t.border}`, borderRight: 'none', borderBottom: 'none', borderLeft: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button onClick={() => setIsDark(v => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, justifyContent: collapsed ? 'center' : 'flex-start', background: 'none', borderTop: `1px solid ${t.border}`, borderRight: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}`, borderLeft: `1px solid ${t.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', color: t.textMuted, fontSize: 12 }}>
+              <button onClick={toggleDark} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, justifyContent: collapsed ? 'center' : 'flex-start', background: 'none', borderTop: `1px solid ${t.border}`, borderRight: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}`, borderLeft: `1px solid ${t.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', color: t.textMuted, fontSize: 12 }}>
                 <span>{isDark ? '☀' : '☾'}</span>
                 {!collapsed && <span>{isDark ? 'Modo claro' : 'Modo oscuro'}</span>}
               </button>
@@ -152,9 +182,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </aside>
 
-          {/* CONTENIDO — renderiza la página activa directamente */}
+          {/* CONTENIDO — solo se monta la pagina activa */}
           <main style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
-            {PAGES[page]}
+            <Suspense fallback={<PageLoader />}>
+              <ActivePage />
+            </Suspense>
           </main>
         </div>
       </div>
