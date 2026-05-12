@@ -18,40 +18,15 @@ function isSafeRedirect(url: string): boolean {
   }
 }
 
-function generateNonce(): string {
-  // Edge runtime: crypto global esta disponible
-  const arr = new Uint8Array(16)
-  crypto.getRandomValues(arr)
-  // base64 sin importar Buffer (Edge no garantiza Node Buffer global)
-  let bin = ''
-  for (const b of arr) bin += String.fromCharCode(b)
-  return btoa(bin)
-}
-
-function buildCsp(nonce: string): string {
-  // Notas de decisiones:
-  // - 'unsafe-eval' solo en dev (React lo usa para reconstruir stacks).
-  // - 'wasm-unsafe-eval' necesario en prod por el escaner de codigo de barras
-  //   (@undecaf/zbar-wasm carga WebAssembly).
-  // - style-src mantiene 'unsafe-inline' porque toda la app usa React.CSSProperties
-  //   inline en cada componente — moverlo a CSS externo seria un rediseno total
-  //   y los inline styles no son una via de XSS si los valores estan escapados.
-  // - 'strict-dynamic' hace que el nonce confie en scripts cargados por scripts ya
-  //   confiables, dejando obsoletas las whitelists tipo https://sdk.mercadopago.com
-  //   (el sdk de MP se carga via componente con nonce desde la app).
-  const scriptSrc = [
-    `'self'`,
-    `'nonce-${nonce}'`,
-    `'strict-dynamic'`,
-    `'wasm-unsafe-eval'`,
-    // Fallback para navegadores que no soportan strict-dynamic
-    `https://sdk.mercadopago.com`,
-    IS_PROD ? '' : `'unsafe-eval'`,
-  ].filter(Boolean).join(' ')
-
+function buildCsp(): string {
+  // CSP sin nonce — la app usa paginas estaticas (Next.js SSG) y React.CSSProperties
+  // inline en todos los componentes. El nonce requiere renderizado dinamico en TODAS
+  // las paginas, lo que rompe la hidratacion de las paginas estaticas.
+  // TODO (futuro): migrar a force-dynamic + nonce cuando se requiera cumplimiento estricto.
+  // Por ahora 'unsafe-inline' es necesario para que Next.js + React funcionen.
   return [
     `default-src 'self'`,
-    `script-src ${scriptSrc}`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://sdk.mercadopago.com`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://auth.afip.gob.ar`,
     `img-src 'self' data: blob: https://*.supabase.co`,
@@ -70,7 +45,6 @@ function buildCsp(nonce: string): string {
 function addSecurityHeaders(
   response: NextResponse,
   origin: string | null,
-  nonce: string
 ): NextResponse {
   // CORS — solo origenes permitidos
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -90,7 +64,7 @@ function addSecurityHeaders(
   response.headers.set('Permissions-Policy',
     'accelerometer=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()'
   )
-  response.headers.set('Content-Security-Policy', buildCsp(nonce))
+  response.headers.set('Content-Security-Policy', buildCsp())
 
   return response
 }
@@ -98,12 +72,11 @@ function addSecurityHeaders(
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
   const origin = request.headers.get('origin')
-  const nonce = generateNonce()
 
   // Preflight CORS
   if (request.method === 'OPTIONS') {
     const res = new NextResponse(null, { status: 204 })
-    return addSecurityHeaders(res, origin, nonce)
+    return addSecurityHeaders(res, origin)
   }
 
   // Bloquear open redirect
@@ -112,11 +85,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // Pasar el nonce a Next via header del request para que lo inyecte en sus scripts
-  const requestHeaders = new Headers(request.headers)
-  requestHeaders.set('x-nonce', nonce)
-
-  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  const response = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -138,7 +107,7 @@ export async function proxy(request: NextRequest) {
   const isWebhook    = pathname.startsWith('/api/webhook')
   const isAsset      = pathname.startsWith('/_next') || pathname.startsWith('/icon') || pathname === '/manifest.json' || pathname === '/sw.js'
 
-  if (isAsset) return addSecurityHeaders(response, origin, nonce)
+  if (isAsset) return addSecurityHeaders(response, origin)
 
   // Rutas de API protegidas (incluye /api/auth/register que tiene su propio handling pero no requiere user)
   const isAuthPublicApi = pathname.startsWith('/api/auth/register')
@@ -151,20 +120,20 @@ export async function proxy(request: NextRequest) {
     const res = NextResponse.redirect(new URL('/login', request.url))
     res.cookies.delete('sb-access-token')
     res.cookies.delete('sb-refresh-token')
-    return addSecurityHeaders(res, origin, nonce)
+    return addSecurityHeaders(res, origin)
   }
 
   if (!user && !isPublic && !isWebhook && !isAuthPublicApi) {
     const loginUrl = new URL('/login', request.url)
     if (pathname !== '/') loginUrl.searchParams.set('redirect', pathname)
-    return addSecurityHeaders(NextResponse.redirect(loginUrl), origin, nonce)
+    return addSecurityHeaders(NextResponse.redirect(loginUrl), origin)
   }
 
   if (user && isPublic) {
-    return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)), origin, nonce)
+    return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)), origin)
   }
 
-  return addSecurityHeaders(response, origin, nonce)
+  return addSecurityHeaders(response, origin)
 }
 
 export const config = {
