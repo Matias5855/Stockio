@@ -54,7 +54,7 @@ function addSecurityHeaders(response: NextResponse, origin: string | null): Next
   return response
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
   const origin = request.headers.get('origin')
 

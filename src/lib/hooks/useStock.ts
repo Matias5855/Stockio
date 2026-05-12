@@ -1,10 +1,7 @@
 'use client'
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { saveLocal, getLocal } from '@/lib/db/indexeddb'
-import { getOrgId } from '@/lib/supabase/client'
-import { syncManager } from '@/lib/sync/syncManager'
-import { debounce } from '@/lib/utils/debounce'
+import { saveLocal } from '@/lib/db/indexeddb'
+import { useTableSync } from './useTableSync'
 
 export type Producto = {
   id: string
@@ -19,92 +16,24 @@ export type Producto = {
 }
 
 export function useStock() {
-  const supabase = useMemo(() => createClient(), [])
-  const [productos, setProductos] = useState<Producto[]>([])
-  const [loading, setLoading] = useState(true)
-  const [orgId, setOrgId] = useState<string | null>(null)
-  const mountedRef = useRef(true)
+  const {
+    data: productos,
+    loading,
+    orgId,
+    setData: setProductos,
+    refetch: fetchProductos,
+  } = useTableSync<Producto>({
+    table: 'productos',
+    filter: { activo: true },
+    order: { column: 'nombre', ascending: true },
+    // Offline: descartar productos marcados como activo=false
+    localFilter: p => p.activo !== false,
+  })
 
-  useEffect(() => {
-    mountedRef.current = true
-    getOrgId().then(id => { if (id && mountedRef.current) setOrgId(id) })
-    return () => { mountedRef.current = false }
-  }, [])
-
-  const fetchLocal = useCallback(async (currentOrgId: string) => {
-    try {
-      const local = await getLocal('productos', currentOrgId)
-      const activos = local.filter((p: Producto) => p.activo !== false)
-      if (activos.length > 0) {
-        if (mountedRef.current) setProductos(activos)
-        return
-      }
-      const cached = localStorage.getItem('sf_productos_cache')
-      if (cached && mountedRef.current) setProductos(JSON.parse(cached))
-    } catch (err) {
-      console.warn('[useStock] fallback localStorage:', err)
-      try {
-        const cached = localStorage.getItem('sf_productos_cache')
-        if (cached && mountedRef.current) setProductos(JSON.parse(cached))
-      } catch {}
-    }
-  }, [])
-
-  const fetchProductos = useCallback(async () => {
-    if (!orgId) return
-    setLoading(true)
-    if (!navigator.onLine) {
-      await fetchLocal(orgId)
-      if (mountedRef.current) setLoading(false)
-      return
-    }
-    try {
-      const { data, error } = await supabase
-        .from('productos').select('*').eq('org_id', orgId).eq('activo', true).order('nombre')
-      if (!error && data) {
-        if (mountedRef.current) setProductos(data)
-        try { localStorage.setItem('sf_productos_cache', JSON.stringify(data)) } catch {}
-        // Paralelizar guardado en IndexedDB (antes era secuencial con for...of await)
-        await Promise.all(
-          data.map(p => saveLocal('productos', p, 'update').catch(() => {}))
-        )
-      }
-    } catch (err) {
-      console.warn('[useStock] fetch fallo, usando local:', err)
-      await fetchLocal(orgId)
-    }
-    if (mountedRef.current) setLoading(false)
-  }, [orgId, fetchLocal, supabase])
-
-  useEffect(() => {
-    if (!orgId) return
-    fetchProductos()
-
-    if (!navigator.onLine) return
-
-    // Debounce: si llegan multiples cambios en <500ms, hace 1 solo fetch
-    const debouncedFetch = debounce(() => { if (mountedRef.current) fetchProductos() }, 500)
-
-    const channel = supabase.channel(`productos_${orgId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, debouncedFetch)
-      .subscribe()
-
-    // Listener online: await en lugar de evento para evitar race condition
-    const onOnline = async () => {
-      await syncManager.sync()
-      if (mountedRef.current) await fetchProductos()
-    }
-    window.addEventListener('online', onOnline)
-
-    return () => {
-      debouncedFetch.cancel()
-      supabase.removeChannel(channel)
-      window.removeEventListener('online', onOnline)
-    }
-  }, [orgId, fetchProductos, supabase])
+  const supabase = createClient()
 
   const addProducto = async (p: Partial<Producto>) => {
-    const producto = {
+    const producto: Producto = {
       id: crypto.randomUUID(),
       nombre: p.nombre ?? '',
       sku: p.sku?.trim() || `SKU-${Date.now()}`,
