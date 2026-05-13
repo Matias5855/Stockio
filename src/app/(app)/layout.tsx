@@ -135,19 +135,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <header style={{
-            padding: '12px 28px',
-            borderBottom: `1px solid ${t.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            background: t.bg,
-            flexShrink: 0,
-          }}>
-            <BusquedaGlobal onNavegar={setPage} />
-            <Notificaciones />
-          </header>
-
           {/* SIDEBAR */}
           <aside style={{ width: collapsed ? 60 : 220, background: t.sidebar, borderTop: 'none', borderBottom: 'none', borderLeft: 'none', borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', transition: 'width 0.2s ease', flexShrink: 0, overflow: 'hidden' }}>
 
@@ -182,12 +169,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </aside>
 
-          {/* CONTENIDO — solo se monta la pagina activa */}
-          <main style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
-            <Suspense fallback={<PageLoader />}>
-              <ActivePage />
-            </Suspense>
-          </main>
+          {/* HEADER + CONTENIDO */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <header style={{
+              padding: '14px 28px',
+              borderBottom: `1px solid ${t.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 16,
+              background: t.sidebar,
+              flexShrink: 0,
+            }}>
+              <div style={{ flex: 1, maxWidth: 480 }}>
+                <BusquedaGlobal onNavegar={setPage} />
+              </div>
+              <Notificaciones />
+            </header>
+
+            <main style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
+              <Suspense fallback={<PageLoader />}>
+                <ActivePage />
+              </Suspense>
+            </main>
+          </div>
         </div>
       </div>
     </NavContext.Provider>
