@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
+import { logHistorial } from '@/lib/historial'
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-AR')
 const supabase = createClient()
@@ -111,6 +112,10 @@ export default function CuotasPage() {
         total: montoConInteres,
         notas: `Plan de cuotas: ${form.cantidad_cuotas} pagos de ${fmt(montoCuota)} (${form.frecuencia})`,
       })
+      logHistorial({
+        accion: 'crear', entidad: 'cuota_plan', entidad_id: cuotaCreada.id,
+        descripcion: `Plan de cuotas creado: ${form.cliente_nombre} · ${form.cantidad_cuotas} × ${fmt(montoCuota)} = ${fmt(montoConInteres)}`,
+      })
     }
 
     setModal(false)
@@ -157,6 +162,11 @@ export default function CuotasPage() {
           .update({ estado: 'cobrada' })
           .eq('nro_factura', `CTA-${cuotaIdShort}`)
       }
+
+      logHistorial({
+        accion: 'cobrar', entidad: 'cuota_pago', entidad_id: cuotaPagoId,
+        descripcion: `Cobro de cuota ${nuevasCuotasPagadas}/${cv.cantidad_cuotas} de ${cv.cliente_nombre} ($${monto.toLocaleString('es-AR')})${completada ? ' — PLAN COMPLETADO' : ''}`,
+      })
     }
     fetchCuotas()
     if (detalle?.id === cuotaVentaId) {

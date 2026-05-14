@@ -2,6 +2,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal } from '@/lib/db/indexeddb'
 import { useTableSync } from './useTableSync'
+import { logHistorial } from '@/lib/historial'
 
 export type Producto = {
   id: string
@@ -57,6 +58,10 @@ export function useStock() {
     }
 
     setProductos(prev => [...prev, producto])
+    logHistorial({
+      accion: 'crear', entidad: 'producto', entidad_id: producto.id,
+      descripcion: `Producto "${producto.nombre}" agregado (cantidad: ${producto.cantidad})`,
+    })
   }
 
   const updateProducto = async (id: string, data: Partial<Producto>) => {
@@ -71,17 +76,29 @@ export function useStock() {
     }
 
     setProductos(prev => prev.map(p => p.id === id ? { ...p, ...data } : p))
+    if (existente) {
+      logHistorial({
+        accion: 'editar', entidad: 'producto', entidad_id: id,
+        descripcion: `Producto "${existente.nombre}" editado`,
+      })
+    }
   }
 
   const deleteProducto = async (id: string) => {
+    const existente = productos.find(x => x.id === id)
     if (navigator.onLine) {
       const { error } = await supabase.from('productos').update({ activo: false }).eq('id', id)
       if (error) throw new Error(error.message)
     } else {
-      const p = productos.find(x => x.id === id)
-      if (p) await saveLocal('productos', { ...p, activo: false }, 'update')
+      if (existente) await saveLocal('productos', { ...existente, activo: false }, 'update')
     }
     setProductos(prev => prev.filter(p => p.id !== id))
+    if (existente) {
+      logHistorial({
+        accion: 'eliminar', entidad: 'producto', entidad_id: id,
+        descripcion: `Producto "${existente.nombre}" eliminado`,
+      })
+    }
   }
 
   return { productos, loading, orgId, addProducto, updateProducto, deleteProducto, refetch: fetchProductos }

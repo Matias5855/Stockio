@@ -14,6 +14,7 @@ const VentasPage       = dynamic(() => import('./ventas/page'),       { loading:
 const FinanzasPage     = dynamic(() => import('./finanzas/page'),     { loading: () => <PageLoader /> })
 const ArchivosPage     = dynamic(() => import('./archivos/page'),     { loading: () => <PageLoader /> })
 const CuotasPage       = dynamic(() => import('./cuotas/page'),       { loading: () => <PageLoader /> })
+const HistorialPage    = dynamic(() => import('./historial/page'),    { loading: () => <PageLoader /> })
 const ConfiguracionPage = dynamic(() => import('./configuracion/page'), { loading: () => <PageLoader /> })
 
 function PageLoader() {
@@ -38,6 +39,7 @@ const NAV = [
   { id: 'finanzas',      label: 'Finanzas',      icon: '$' },
   { id: 'archivos',      label: 'Archivos',      icon: '⊞' },
   { id: 'cuotas',        label: 'Cuotas',        icon: '⊟' },
+  { id: 'historial',     label: 'Historial',     icon: '⟲' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙' },
 ] as const
 
@@ -48,6 +50,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   finanzas: FinanzasPage,
   archivos: ArchivosPage,
   cuotas: CuotasPage,
+  historial: HistorialPage,
   configuracion: ConfiguracionPage,
 }
 

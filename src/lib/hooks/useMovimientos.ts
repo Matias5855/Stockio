@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal } from '@/lib/db/indexeddb'
 import { useTableSync } from './useTableSync'
+import { logHistorial } from '@/lib/historial'
 
 export type Movimiento = {
   id: string
@@ -48,17 +49,27 @@ export function useMovimientos() {
     }
 
     setMovimientos(prev => [nuevo, ...prev])
+    logHistorial({
+      accion: 'crear', entidad: 'movimiento', entidad_id: nuevo.id,
+      descripcion: `${m.tipo === 'ingreso' ? 'Ingreso' : 'Egreso'} de $${m.monto.toLocaleString('es-AR')}: ${m.descripcion}`,
+    })
   }
 
   const deleteMovimiento = async (id: string) => {
+    const m = movimientos.find(x => x.id === id)
     if (navigator.onLine) {
       const { error } = await supabase.from('movimientos').delete().eq('id', id)
       if (error) throw new Error(error.message)
     } else {
-      const m = movimientos.find(x => x.id === id)
       if (m) await saveLocal('movimientos', m, 'delete')
     }
-    setMovimientos(prev => prev.filter(m => m.id !== id))
+    setMovimientos(prev => prev.filter(x => x.id !== id))
+    if (m) {
+      logHistorial({
+        accion: 'eliminar', entidad: 'movimiento', entidad_id: id,
+        descripcion: `Movimiento eliminado: ${m.descripcion} ($${m.monto.toLocaleString('es-AR')})`,
+      })
+    }
   }
 
   // useMemo evita recalcular en cada render si movimientos no cambio

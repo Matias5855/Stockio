@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveLocal } from '@/lib/db/indexeddb'
 import { useTableSync } from './useTableSync'
+import { logHistorial } from '@/lib/historial'
 
 export type VentaItem = {
   producto_id: string | null
@@ -106,29 +107,45 @@ export function useVentas() {
     }
 
     setVentas(prev => [nuevaVenta as Venta, ...prev])
+    logHistorial({
+      accion: 'crear', entidad: 'venta', entidad_id: nuevaVenta.id,
+      descripcion: `Venta ${nuevaVenta.nro_factura} a ${venta.cliente_nombre ?? 'Consumidor Final'} por $${venta.total.toLocaleString('es-AR')}`,
+    })
     return nuevaVenta
   }
 
   const cambiarEstado = async (id: string, estado: Venta['estado']) => {
+    const v = ventas.find(x => x.id === id)
     if (navigator.onLine) {
       const { error } = await supabase.from('ventas').update({ estado }).eq('id', id)
       if (error) throw new Error(error.message)
     } else {
-      const v = ventas.find(x => x.id === id)
       if (v) await saveLocal('ventas', { ...v, estado }, 'update')
     }
-    setVentas(prev => prev.map(v => v.id === id ? { ...v, estado } : v))
+    setVentas(prev => prev.map(x => x.id === id ? { ...x, estado } : x))
+    if (v) {
+      logHistorial({
+        accion: 'cambiar_estado', entidad: 'venta', entidad_id: id,
+        descripcion: `Venta ${v.nro_factura} marcada como ${estado}`,
+      })
+    }
   }
 
   const deleteVenta = async (id: string) => {
+    const v = ventas.find(x => x.id === id)
     if (navigator.onLine) {
       const { error } = await supabase.from('ventas').delete().eq('id', id)
       if (error) throw new Error(error.message)
     } else {
-      const v = ventas.find(x => x.id === id)
       if (v) await saveLocal('ventas', v, 'delete')
     }
-    setVentas(prev => prev.filter(v => v.id !== id))
+    setVentas(prev => prev.filter(x => x.id !== id))
+    if (v) {
+      logHistorial({
+        accion: 'eliminar', entidad: 'venta', entidad_id: id,
+        descripcion: `Venta ${v.nro_factura} eliminada`,
+      })
+    }
   }
 
   return { ventas, loading, orgId, crearVenta, cambiarEstado, deleteVenta, refetch: fetchVentas }
