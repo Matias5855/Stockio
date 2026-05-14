@@ -45,9 +45,17 @@ const NAV: readonly NavItem[] = [
   { id: 'archivos',      label: 'Archivos',      icon: '⊞' },
   { id: 'cuotas',        label: 'Cuotas',        icon: '⊟' },
   { id: 'empleados',     label: 'Empleados',     icon: '👥', requierePremium: true },
-  { id: 'historial',     label: 'Historial',     icon: '⟲' },
+  { id: 'historial',     label: 'Historial',     icon: '⟲', requierePremium: true },
   { id: 'configuracion', label: 'Configuración', icon: '⚙' },
 ] as const
+
+// Acepta cualquier alias del plan Premium (sistema viejo usa 'business',
+// nuevo usa 'premium'). Tolerante a case.
+function esPlanPremium(planId?: string): boolean {
+  if (!planId) return false
+  const p = planId.toLowerCase()
+  return p === 'premium' || p === 'business'
+}
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   dashboard: DashboardPage,
@@ -245,7 +253,7 @@ export default function AppLayout() {
             </div>
 
             <nav style={{ flex: 1, padding: '10px 0' }}>
-              {NAV.filter(item => !item.requierePremium || suscripcion?.plan_id === 'premium').map(item => (
+              {NAV.filter(item => !item.requierePremium || esPlanPremium(suscripcion?.plan_id)).map(item => (
                 <button key={item.id} onClick={() => setPage(item.id)} style={navBtnStyle(page === item.id)}>
                   <span style={{ fontSize: 16 }}>{item.icon}</span>
                   {!collapsed && <span>{item.label}</span>}

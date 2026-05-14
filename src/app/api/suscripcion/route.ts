@@ -11,27 +11,33 @@ export const dynamic = 'force-dynamic'
 
 const MP_BASE = 'https://api.mercadopago.com'
 
-const PLANES_MP = {
-  pro: {
-    reason: 'StockFlow Pro',
-    auto_recurring: {
-      frequency: 1,
-      frequency_type: 'months',
-      transaction_amount: 9990,
-      currency_id: 'ARS',
-      free_trial: { frequency: 1, frequency_type: 'months' },
+// Los planes MP requieren back_url cuando tienen free_trial.
+// Lo armamos en runtime con el appUrl correcto.
+function buildPlanesConfig(appUrl: string) {
+  return {
+    pro: {
+      reason: 'StockFlow Normal',
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 9990,
+        currency_id: 'ARS',
+        free_trial: { frequency: 1, frequency_type: 'months' },
+      },
+      back_url: `${appUrl}/dashboard?suscripcion=ok`,
     },
-  },
-  business: {
-    reason: 'StockFlow Business',
-    auto_recurring: {
-      frequency: 1,
-      frequency_type: 'months',
-      transaction_amount: 19990,
-      currency_id: 'ARS',
-      free_trial: { frequency: 1, frequency_type: 'months' },
+    business: {
+      reason: 'StockFlow Premium',
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 19990,
+        currency_id: 'ARS',
+        free_trial: { frequency: 1, frequency_type: 'months' },
+      },
+      back_url: `${appUrl}/dashboard?suscripcion=ok`,
     },
-  },
+  } as const
 }
 
 // ── GET: estado del plan actual (cualquier miembro de la org) ─────
@@ -88,8 +94,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
-    const planConfig = PLANES_MP[plan_id]
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    // appUrl con fallback al origin del request por si la env var no esta
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
+    const planConfig = buildPlanesConfig(appUrl)[plan_id]
 
     // 1. Crear plan en MP (si no existe)
     const { data: planDb } = await supabase
