@@ -98,11 +98,15 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
     const planConfig = buildPlanesConfig(appUrl)[plan_id]
 
-    // 1. Crear plan en MP (si no existe)
+    // 1. Crear plan en MP si no existe, o leer su init_point si ya existe.
+    // El init_point del PLAN es la URL donde el user pone su tarjeta y MP
+    // crea el preapproval automaticamente. Esto reemplaza el flow viejo
+    // (POST /preapproval directo) que ahora requiere card_token_id.
     const { data: planDb } = await supabase
       .from('planes').select('mp_plan_id').eq('id', plan_id).single()
 
     let mpPlanId = planDb?.mp_plan_id
+    let planInitPoint: string | null = null
 
     if (!mpPlanId) {
       const planRes = await fetch(`${MP_BASE}/preapproval_plan`, {
@@ -114,56 +118,55 @@ export async function POST(req: NextRequest) {
       if (!planData.id) {
         console.error('[Suscripcion POST] MP no creo el plan:', planData)
         return NextResponse.json({
-          error: `Mercado Pago rechazo el plan: ${planData.message ?? 'error desconocido'}`,
+          error: `Mercado Pago: ${planData.cause?.[0]?.description ?? planData.message ?? 'no pudo crear el plan'}`,
         }, { status: 502 })
       }
       mpPlanId = planData.id
+      planInitPoint = planData.init_point
       await supabase.from('planes').update({ mp_plan_id: mpPlanId }).eq('id', plan_id)
+    } else {
+      // Plan ya existe en MP — recuperamos su init_point con GET
+      const planRes = await fetch(`${MP_BASE}/preapproval_plan/${mpPlanId}`, {
+        headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` },
+      })
+      const planData = await planRes.json()
+      planInitPoint = planData.init_point
+      if (!planInitPoint) {
+        console.error('[Suscripcion POST] MP no devolvio init_point del plan existente:', planData)
+        // Fallback: invalidamos el mp_plan_id viejo y forzamos recrearlo en el proximo intento
+        await supabase.from('planes').update({ mp_plan_id: null }).eq('id', plan_id)
+        return NextResponse.json({
+          error: 'El plan guardado en Mercado Pago tiene un problema. Volve a intentar y se va a recrear.',
+        }, { status: 502 })
+      }
     }
 
-    // 2. Crear suscripción del usuario
-    const preapprovalBody = {
-      preapproval_plan_id: mpPlanId,
-      payer_email,
-      back_url: `${appUrl}/dashboard?suscripcion=ok`,
-      reason: planConfig.reason,
-      external_reference: profile.org_id,
+    // Defensa: TS no puede inferir que llegamos aca solo si planInitPoint quedo seteado
+    if (!planInitPoint) {
+      return NextResponse.json({ error: 'No pudimos obtener el link de pago' }, { status: 502 })
     }
 
-    const suscRes = await fetch(`${MP_BASE}/preapproval`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ACCESS_TOKEN}` },
-      body: JSON.stringify(preapprovalBody),
-    })
+    // 2. Anexamos external_reference al init_point para que cuando MP cree
+    // el preapproval lo asocie a nuestra org. El webhook se entera y
+    // actualiza la fila de suscripciones.
+    const initPointConRef = planInitPoint.includes('?')
+      ? `${planInitPoint}&external_reference=${encodeURIComponent(profile.org_id)}`
+      : `${planInitPoint}?external_reference=${encodeURIComponent(profile.org_id)}`
 
-    const suscData = await suscRes.json()
-
-    if (!suscData.id || !suscData.init_point) {
-      // MP devuelve estructuras tipo: { status: 400, message: "...", cause: [{ description: "..." }] }
-      const mpMsg = suscData.message
-        ?? suscData.cause?.[0]?.description
-        ?? suscData.error
-        ?? 'no devolvio init_point'
-      console.error('[Suscripcion POST] MP rechazo preapproval:', JSON.stringify(suscData))
-      return NextResponse.json({
-        error: `Mercado Pago: ${mpMsg}. Probá con otro email o contactá soporte.`,
-      }, { status: 502 })
-    }
-
-    // 3. Guardar en Supabase
+    // 3. Marcamos la suscripcion como "trial" tentativamente hasta que
+    // MP confirme el preapproval via webhook. (Si era 'vencida', vuelve
+    // a 'trial' mientras MP procesa.)
     await supabase.from('suscripciones').upsert({
       org_id: profile.org_id,
       plan_id,
       estado: 'trial',
-      mp_suscripcion_id: suscData.id,
       mp_payer_id: payer_email,
       trial_fin: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
     }, { onConflict: 'org_id' })
 
     return NextResponse.json({
       ok: true,
-      init_point: suscData.init_point,
-      suscripcion_id: suscData.id,
+      init_point: initPointConRef,
     })
 
   } catch (err) {

@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
+import { useNav } from '../layout'
 
 type Empleado = {
   id: string
@@ -77,7 +78,9 @@ export default function EmpleadosPage() {
     setLoading(true)
     const { data: sus } = await supabase
       .from('suscripciones').select('plan_id').eq('org_id', orgId).single()
-    setEsPremium(sus?.plan_id === 'premium')
+    // Acepta 'premium', 'business' (MP) y variantes de case
+    const planId = (sus?.plan_id ?? '').toLowerCase()
+    setEsPremium(planId === 'premium' || planId === 'business')
 
     const { data: perfiles } = await supabase
       .from('profiles').select('*')
@@ -158,30 +161,7 @@ export default function EmpleadosPage() {
   }
 
   if (!esPremium && !loading) {
-    return (
-      <div>
-        <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>Gestión de empleados</p>
-        <div style={{
-          marginTop: 32, textAlign: 'center',
-          background: t.card, border: `1px solid ${t.borderCard}`,
-          borderRadius: 16, padding: 56,
-        }}>
-          <p style={{ fontSize: 44, marginBottom: 16 }}>👥</p>
-          <p style={{ fontWeight: 800, fontSize: 20, color: t.text, marginBottom: 10 }}>Función exclusiva del plan Premium</p>
-          <p style={{ color: t.textMuted, fontSize: 14, marginBottom: 24, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-            Con StockFlow Premium podés agregar empleados ilimitados, asignarles roles y que todos vean el mismo stock en tiempo real.
-          </p>
-          <a href="/configuracion" style={{
-            background: COLORS.primary, color: '#fff', borderRadius: 10,
-            padding: '12px 28px', textDecoration: 'none', fontWeight: 700, fontSize: 14,
-            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-            display: 'inline-block',
-          }}>
-            Actualizar a Premium
-          </a>
-        </div>
-      </div>
-    )
+    return <PaywallPremium textoTema={t} />
   }
 
   return (
@@ -426,6 +406,44 @@ export default function EmpleadosPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Paywall mostrado cuando la org no es Premium. Usa el NavContext del
+// layout para saltar a Configuracion (navegacion SPA, no full reload).
+function PaywallPremium({ textoTema }: { textoTema: ReturnType<typeof getTheme> }) {
+  const { setPage } = useNav()
+  const t = textoTema
+  return (
+    <div>
+      <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
+        Gestión de empleados
+      </p>
+      <div style={{
+        marginTop: 32, textAlign: 'center',
+        background: t.card, border: `1px solid ${t.borderCard}`,
+        borderRadius: 16, padding: 56,
+      }}>
+        <p style={{ fontSize: 44, marginBottom: 16 }}>👥</p>
+        <p style={{ fontWeight: 800, fontSize: 20, color: t.text, marginBottom: 10 }}>
+          Función exclusiva del plan Premium
+        </p>
+        <p style={{ color: t.textMuted, fontSize: 14, marginBottom: 24, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+          Con StockFlow Premium podés agregar empleados ilimitados, asignarles roles y que todos vean el mismo stock en tiempo real.
+        </p>
+        <button
+          onClick={() => setPage('configuracion')}
+          style={{
+            background: COLORS.primary, color: '#fff', borderRadius: 10,
+            padding: '12px 28px', border: 'none', fontWeight: 700, fontSize: 14,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+            cursor: 'pointer',
+          }}
+        >
+          Actualizar a Premium
+        </button>
+      </div>
     </div>
   )
 }
