@@ -239,8 +239,20 @@ export class ARCAService {
   }
 }
 
-// ── FACTORY: crear instancia desde variables de entorno ──────
+// ── FACTORIES ────────────────────────────────────────────────
 
+/**
+ * Crea instancia con config explicito — usado cuando las credenciales
+ * vienen de la tabla `organizations` (cada PyME tiene las suyas).
+ */
+export function crearARCAServiceCon(config: ConfigARCA): ARCAService {
+  return new ARCAService(config)
+}
+
+/**
+ * Crea instancia desde variables de entorno — fallback / dev local.
+ * Prefiri usar crearARCAServiceCon en flows multi-tenant.
+ */
 export function crearARCAService(ambiente: 'testing' | 'produccion' = 'testing'): ARCAService {
   return new ARCAService({
     cuit:          process.env.ARCA_CUIT!,

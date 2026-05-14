@@ -119,7 +119,7 @@ ARCA_AMBIENTE (testing/produccion)
 - El org_id se obtiene desde localStorage('sf_org_id') o desde profiles en Supabase
 - Mercado Pago es el único procesador de pagos (Argentina)
 - ARCA/AFIP para facturación electrónica (aún no activado en producción)
-- El negocio del dueño se llama "Matineta"
+- El negocio del dueño se puede llamar como quiera, debe tener una opcion para nombrar su negocio
 
 ## URL de producción
 https://stockflow-indol.vercel.app

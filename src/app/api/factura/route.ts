@@ -3,10 +3,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { crearARCAService, DatosFactura } from '@/lib/arca'
+import { crearARCAServiceCon, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
 import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
 import { parseBody, FacturaInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
+import { decryptSecret } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,14 +46,22 @@ export async function POST(req: NextRequest) {
 
     let cae: string | undefined
     let cae_vencimiento: string | undefined
-    let tipo_comprobante: 'A' | 'B' | 'C' | 'X' = 'X'
+    const tipo_comprobante: 'A' | 'B' | 'C' | 'X' = 'C'  // Siempre Factura C en este SaaS
+    let arcaError: string | null = null
 
-    // 3. Llamar a ARCA si está configurado
-    if (usar_arca && process.env.ARCA_CUIT) {
+    // 3. Llamar a ARCA solo si la org tiene ARCA activado y configurado
+    if (usar_arca && org?.arca_activado && org?.arca_cert_pem_enc && org?.arca_private_key_pem_enc) {
       try {
-        const arca = crearARCAService(
-          process.env.ARCA_AMBIENTE === 'produccion' ? 'produccion' : 'testing'
-        )
+        const certPEM = decryptSecret(org.arca_cert_pem_enc)
+        const privateKeyPEM = decryptSecret(org.arca_private_key_pem_enc)
+
+        const arca = crearARCAServiceCon({
+          cuit: org.arca_cuit ?? '',
+          certPEM,
+          privateKeyPEM,
+          puntoVenta: parseInt(org.arca_punto_venta ?? '1', 10),
+          ambiente: org.arca_ambiente === 'produccion' ? 'produccion' : 'testing',
+        })
 
         const datosFactura: DatosFactura = {
           tipo_comprobante: 11, // Factura C (Monotributistas)
@@ -61,23 +70,27 @@ export async function POST(req: NextRequest) {
             descripcion: i.producto_nombre,
             cantidad: i.cantidad,
             precio_unitario: i.precio_unitario,
-            alicuota_iva: 0,
+            alicuota_iva: 0, // Monotributo no discrimina IVA
           })),
         }
 
         const resultado = await arca.emitirFactura(datosFactura)
         cae = resultado.cae
         cae_vencimiento = resultado.cae_vencimiento
-        tipo_comprobante = 'C'
 
+        // Guardar CAE en la venta para futuras referencias
         await supabase.from('ventas').update({
           notas: `CAE: ${cae} | Vto: ${cae_vencimiento}`,
         }).eq('id', venta_id)
 
       } catch (arcaErr) {
-        const msg = arcaErr instanceof Error ? arcaErr.message : 'unknown'
-        console.error('[Factura] ARCA fallo:', msg)
+        arcaError = arcaErr instanceof Error ? arcaErr.message : 'Error desconocido en ARCA'
+        console.error('[Factura] ARCA fallo:', arcaError)
+        // No abortamos: igual generamos el PDF sin CAE para que el comercio pueda
+        // entregar al menos un comprobante interno mientras debugea la integracion.
       }
+    } else if (usar_arca && !org?.arca_activado) {
+      arcaError = 'ARCA no está activado para esta organización. Configurálo en Configuración → Facturación Electrónica.'
     }
 
     // 4. Generar PDF
@@ -86,7 +99,14 @@ export async function POST(req: NextRequest) {
       fecha: venta.fecha,
       cliente_nombre: venta.cliente_nombre ?? 'Consumidor Final',
       negocio_nombre: org?.name ?? 'Mi Negocio',
-      negocio_cuit: process.env.ARCA_CUIT,
+      negocio_cuit: org?.arca_cuit ?? org?.cuit ?? undefined,
+      negocio_direccion: org?.direccion ?? undefined,
+      negocio_iibb: org?.iibb ?? undefined,
+      negocio_inicio_actividades: org?.inicio_actividades ?? undefined,
+      condicion_iva_emisor: org?.condicion_iva ?? 'Responsable Monotributo',
+      condicion_iva_receptor: 'Consumidor Final',
+      condicion_venta: 'Contado',
+      punto_venta: org?.arca_punto_venta ?? org?.punto_venta ?? '0001',
       items: ((venta.venta_items ?? []) as VentaItemRow[]).map((i) => ({
         nombre: i.producto_nombre,
         cantidad: i.cantidad,
@@ -136,7 +156,13 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ ok: true, cae, tipo_comprobante })
+    return NextResponse.json({
+      ok: true,
+      cae,
+      cae_vencimiento,
+      tipo_comprobante,
+      arca_error: arcaError,
+    })
 
   } catch (err) {
     if (err instanceof AuthError) {

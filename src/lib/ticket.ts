@@ -1,5 +1,34 @@
+/**
+ * Generacion de Factura C (Codigo 11) en formato AFIP/ARCA estandar argentino.
+ *
+ * El layout es siempre el mismo — solo cambian los items, totales, datos del
+ * cliente y la info del emisor (que viene de la tabla `organizations`).
+ *
+ * Layout fiel al modelo AFIP:
+ *   - "ORIGINAL" arriba centrado
+ *   - Recuadro con la letra "C" y "COD. 11" + titulo "FACTURA"
+ *   - Punto de venta + Comp. Nro a la derecha
+ *   - Datos del emisor (Razon Social, CUIT, IIBB, Inicio actividades, etc.)
+ *   - Periodo facturado / Vto. de pago
+ *   - Datos del receptor
+ *   - Tabla de items (Codigo, Producto/Servicio, Cant., U. Medida, Precio
+ *     Unit., % Bonif., Imp. Bonif., Subtotal)
+ *   - Totales a la derecha
+ *   - CAE en footer con codigo de barras simulado
+ */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+
+export interface TicketItem {
+  nombre: string
+  cantidad: number
+  precio_unitario: number
+  subtotal: number
+  codigo?: string
+  unidad_medida?: string // default 'un'
+  bonif_pct?: number     // % de bonificacion
+  imp_bonif?: number     // monto bonificado
+}
 
 export interface TicketData {
   nro_factura: string
@@ -14,340 +43,351 @@ export interface TicketData {
   negocio_email?: string
   negocio_iibb?: string
   negocio_inicio_actividades?: string
-  items: {
-    nombre: string
-    cantidad: number
-    precio_unitario: number
-    subtotal: number
-  }[]
+  items: TicketItem[]
   subtotal: number
   descuento: number
   total: number
-  tipo_comprobante: 'A' | 'B' | 'C' | 'X'
-  condicion_iva_emisor?: string   // Ej: "Responsable Inscripto" | "Monotributista"
-  condicion_iva_receptor?: string // Ej: "Consumidor Final"
-  condicion_venta?: string        // Ej: "Contado" | "Cuenta Corriente"
+  /** Siempre 'C' — campo legacy, se ignora */
+  tipo_comprobante?: 'A' | 'B' | 'C' | 'X'
+  condicion_iva_emisor?: string
+  condicion_iva_receptor?: string
+  condicion_venta?: string
   cae?: string
   cae_vencimiento?: string
   punto_venta?: string
+  periodo_desde?: string
+  periodo_hasta?: string
+  fecha_vto_pago?: string
 }
 
-// Colores
-const MORADO = [124, 111, 224] as [number, number, number]
-const NEGRO  = [30, 30, 30]   as [number, number, number]
-const GRIS   = [100, 100, 100] as [number, number, number]
-const GRIS_CLARO = [220, 220, 220] as [number, number, number]
-const BLANCO = [255, 255, 255] as [number, number, number]
-const VERDE  = [22, 160, 101]  as [number, number, number]
+// Paleta: factura tradicional blanco/negro con grises de soporte
+const NEGRO       = [0, 0, 0]       as [number, number, number]
+const GRIS_TEXTO  = [80, 80, 80]    as [number, number, number]
+const GRIS_BORDE  = [120, 120, 120] as [number, number, number]
+const GRIS_FONDO  = [240, 240, 240] as [number, number, number]
 
 export function generarTicketPDF(data: TicketData): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const W = doc.internal.pageSize.getWidth()   // 210
   const H = doc.internal.pageSize.getHeight()  // 297
-  const M = 15  // margen
+  const M = 10  // margen exterior
 
-  // ── FONDO ────────────────────────────────────────────────────
-  doc.setFillColor(248, 248, 252)
-  doc.rect(0, 0, W, H, 'F')
+  doc.setDrawColor(...NEGRO)
+  doc.setTextColor(...NEGRO)
+  doc.setLineWidth(0.3)
 
-  // ── HEADER — banda superior ───────────────────────────────────
-  doc.setFillColor(...MORADO)
-  doc.rect(0, 0, W, 38, 'F')
-
-  // Nombre del negocio
-  doc.setTextColor(...BLANCO)
-  doc.setFontSize(20)
+  // ──────────────────────────────────────────────────────────────
+  // ENCABEZADO: "ORIGINAL" centrado
+  // ──────────────────────────────────────────────────────────────
+  doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
-  doc.text(data.negocio_nombre.toUpperCase(), M, 16)
+  doc.text('ORIGINAL', W / 2, M + 4, { align: 'center' })
 
-  // Datos del negocio
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'normal')
-  const linea1 = [
-    data.negocio_cuit ? `CUIT: ${formatCUIT(data.negocio_cuit)}` : '',
-    data.negocio_iibb ? `IIBB: ${data.negocio_iibb}` : '',
-    data.condicion_iva_emisor ? `IVA: ${data.condicion_iva_emisor}` : '',
-  ].filter(Boolean).join('   |   ')
-  const linea2 = [
-    data.negocio_direccion ?? '',
-    data.negocio_telefono ? `Tel: ${data.negocio_telefono}` : '',
-    data.negocio_email ?? '',
-  ].filter(Boolean).join('   |   ')
+  // Linea horizontal debajo de "ORIGINAL"
+  doc.setLineWidth(0.5)
+  doc.line(M, M + 6, W - M, M + 6)
 
-  if (linea1) doc.text(linea1, M, 24)
-  if (linea2) doc.text(linea2, M, 29)
-  if (data.negocio_inicio_actividades) {
-    doc.text(`Inicio de actividades: ${data.negocio_inicio_actividades}`, M, 34)
-  }
+  // ──────────────────────────────────────────────────────────────
+  // CABECERA: recuadro "C COD. 11" a la izquierda + bloque FACTURA
+  // con todos los datos del comprobante a la derecha, stacked.
+  // ──────────────────────────────────────────────────────────────
+  const headerY = M + 10
 
-  // ── RECUADRO TIPO DE COMPROBANTE (derecha del header) ─────────
-  const tipoW = 42
-  const tipoX = W - M - tipoW
-  doc.setFillColor(...BLANCO)
-  doc.roundedRect(tipoX, 4, tipoW, 30, 3, 3, 'F')
+  // Recuadro "C" — centrado horizontalmente, formato AFIP
+  const letraSize = 18
+  const letraX = W / 2 - letraSize / 2
+  const letraY = headerY
+  doc.setLineWidth(0.5)
+  doc.rect(letraX, letraY, letraSize, letraSize)
 
-  // Letra grande del tipo
-  doc.setTextColor(...MORADO)
-  doc.setFontSize(28)
+  // Letra "C" grande dentro del recuadro
+  doc.setFontSize(26)
   doc.setFont('helvetica', 'bold')
-  doc.text(data.tipo_comprobante, tipoX + tipoW / 2, 22, { align: 'center' })
+  doc.text('C', letraX + letraSize / 2, letraY + 13.5, { align: 'center' })
 
-  // Descripción del tipo
+  // "COD. 11" debajo del recuadro
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
-  const tipoDesc: Record<string, string> = {
-    A: 'FACTURA A', B: 'FACTURA B', C: 'FACTURA C', X: 'COMPROBANTE',
-  }
-  doc.text(tipoDesc[data.tipo_comprobante] ?? 'COMPROBANTE', tipoX + tipoW / 2, 30, { align: 'center' })
+  doc.text('COD. 11', letraX + letraSize / 2, letraY + letraSize + 3, { align: 'center' })
 
-  // ── DATOS DEL COMPROBANTE ─────────────────────────────────────
-  let y = 46
-
-  doc.setFillColor(...BLANCO)
-  doc.roundedRect(M, y, W - M * 2, 28, 3, 3, 'F')
-  doc.setDrawColor(...GRIS_CLARO)
-  doc.roundedRect(M, y, W - M * 2, 28, 3, 3, 'S')
-
-  // Columna izquierda — datos del comprobante
-  y += 7
-  doc.setTextColor(...GRIS)
-  doc.setFontSize(7.5)
-  doc.setFont('helvetica', 'normal')
-
-  const puntoVenta = data.punto_venta ?? '0001'
-  const nroSolo = data.nro_factura.replace(/^FC-/, '').padStart(8, '0')
-
-  doc.text('Punto de Venta:', M + 4, y)
-  doc.setTextColor(...NEGRO)
+  // Bloque "FACTURA" + datos del comprobante — a la derecha del recuadro
+  const blockX = letraX + letraSize + 8
+  doc.setFontSize(16)
   doc.setFont('helvetica', 'bold')
-  doc.text(puntoVenta.padStart(4, '0'), M + 30, y)
+  doc.text('FACTURA', blockX, letraY + 6)
 
-  y += 6
-  doc.setTextColor(...GRIS)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Nro. Comprobante:', M + 4, y)
-  doc.setTextColor(...NEGRO)
+  // Datos del comprobante en columna stacked (alineados a blockX)
+  doc.setFontSize(8.5)
+  const puntoVenta = (data.punto_venta ?? '0002').padStart(4, '0')
+  const nroSolo = data.nro_factura.replace(/^FC-/, '').replace(/^CTA-/, '').replace(/\D/g, '').padStart(8, '0') || '00000001'
+
+  let cy = letraY + 11
   doc.setFont('helvetica', 'bold')
-  doc.text(nroSolo, M + 30, y)
-
-  y += 6
-  doc.setTextColor(...GRIS)
+  doc.text('Punto de Venta: ', blockX, cy)
   doc.setFont('helvetica', 'normal')
-  doc.text('Fecha de emisión:', M + 4, y)
-  doc.setTextColor(...NEGRO)
+  doc.text(puntoVenta, blockX + 28, cy)
   doc.setFont('helvetica', 'bold')
-  doc.text(formatFecha(data.fecha), M + 30, y)
-
-  // Columna derecha — condiciones
-  const col2X = W / 2 + 5
-  y -= 12
-  doc.setTextColor(...GRIS)
+  doc.text('Comp. Nro: ', blockX + 45, cy)
   doc.setFont('helvetica', 'normal')
-  doc.text('Condición de venta:', col2X, y)
-  doc.setTextColor(...NEGRO)
+  doc.text(nroSolo, blockX + 65, cy)
+
+  cy += 5
   doc.setFont('helvetica', 'bold')
-  doc.text(data.condicion_venta ?? 'Contado', col2X + 32, y)
+  doc.text('Fecha de Emisión: ', blockX, cy)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatFecha(data.fecha), blockX + 30, cy)
 
-  if (data.condicion_iva_receptor) {
-    y += 6
-    doc.setTextColor(...GRIS)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Cond. IVA receptor:', col2X, y)
-    doc.setTextColor(...NEGRO)
-    doc.setFont('helvetica', 'bold')
-    doc.text(data.condicion_iva_receptor, col2X + 32, y)
-  }
+  cy += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('CUIT: ', blockX, cy)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.negocio_cuit ? formatCUIT(data.negocio_cuit) : '—', blockX + 12, cy)
 
-  // ── DATOS DEL CLIENTE ─────────────────────────────────────────
-  y = 82
+  cy += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Ingresos Brutos: ', blockX, cy)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.negocio_iibb ?? '—', blockX + 28, cy)
 
-  // Título sección
-  doc.setFillColor(...MORADO)
-  doc.roundedRect(M, y, W - M * 2, 7, 2, 2, 'F')
-  doc.setTextColor(...BLANCO)
+  cy += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Fecha de Inicio de Actividades: ', blockX, cy)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.negocio_inicio_actividades ?? '—', blockX + 53, cy)
+
+  const headerH = (cy - letraY) + 6  // altura total ocupada por el header
+
+  // ──────────────────────────────────────────────────────────────
+  // DATOS DEL EMISOR
+  // ──────────────────────────────────────────────────────────────
+  let y = headerY + headerH + 4
+
+  // Linea separadora
+  doc.setLineWidth(0.5)
+  doc.line(M, y - 2, W - M, y - 2)
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`Razón Social: `, M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.negocio_nombre ?? '—', M + 24, y)
+
+  y += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Domicilio Comercial: ', M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.negocio_direccion ?? '—', M + 31, y)
+
+  y += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Condición frente al IVA: ', M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.condicion_iva_emisor ?? 'Responsable Monotributo', M + 37, y)
+
+  // ──────────────────────────────────────────────────────────────
+  // PERIODO FACTURADO + VTO PAGO (recuadro horizontal con divisiones)
+  // ──────────────────────────────────────────────────────────────
+  y += 5
+  doc.setLineWidth(0.3)
+  doc.setFillColor(...GRIS_FONDO)
+  doc.rect(M, y, W - 2 * M, 7, 'FD')
+
   doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
-  doc.text('DATOS DEL RECEPTOR', M + 4, y + 5)
-
-  y += 10
-  doc.setFillColor(...BLANCO)
-  doc.roundedRect(M, y, W - M * 2, 20, 2, 2, 'F')
-  doc.setDrawColor(...GRIS_CLARO)
-  doc.roundedRect(M, y, W - M * 2, 20, 2, 2, 'S')
-
-  y += 6
-  doc.setTextColor(...GRIS)
-  doc.setFontSize(7.5)
+  doc.text('Período Facturado Desde: ', M + 2, y + 4.5)
   doc.setFont('helvetica', 'normal')
-  doc.text('Apellido y Nombre / Razón Social:', M + 4, y)
-  doc.setTextColor(...NEGRO)
-  doc.setFont('helvetica', 'bold')
-  doc.text(data.cliente_nombre, M + 60, y)
+  doc.text(data.periodo_desde ?? formatFecha(data.fecha), M + 42, y + 4.5)
 
-  y += 7
-  doc.setTextColor(...GRIS)
+  // Divisor vertical
+  doc.line(W / 2 - 18, y, W / 2 - 18, y + 7)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Hasta: ', W / 2 - 16, y + 4.5)
   doc.setFont('helvetica', 'normal')
+  doc.text(data.periodo_hasta ?? formatFecha(data.fecha), W / 2 - 4, y + 4.5)
 
-  if (data.cliente_cuit) {
-    doc.text('CUIT / CUIL / DNI:', M + 4, y)
-    doc.setTextColor(...NEGRO)
-    doc.setFont('helvetica', 'bold')
-    doc.text(formatCUIT(data.cliente_cuit), M + 35, y)
-  } else {
-    doc.text('Consumidor Final', M + 4, y)
-  }
-
-  if (data.cliente_direccion) {
-    doc.setTextColor(...GRIS)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Domicilio:', col2X, y)
-    doc.setTextColor(...NEGRO)
-    doc.setFont('helvetica', 'bold')
-    doc.text(data.cliente_direccion, col2X + 20, y)
-  }
-
-  // ── TABLA DE ITEMS ────────────────────────────────────────────
-  y = 116
-
-  doc.setFillColor(...MORADO)
-  doc.roundedRect(M, y, W - M * 2, 7, 2, 2, 'F')
-  doc.setTextColor(...BLANCO)
-  doc.setFontSize(8)
+  // Divisor vertical
+  doc.line(W / 2 + 30, y, W / 2 + 30, y + 7)
   doc.setFont('helvetica', 'bold')
-  doc.text('DETALLE DE PRODUCTOS / SERVICIOS', M + 4, y + 5)
+  doc.text('Fecha de Vto. para el pago: ', W / 2 + 32, y + 4.5)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.fecha_vto_pago ?? formatFecha(data.fecha), W - M - 22, y + 4.5)
 
+  // ──────────────────────────────────────────────────────────────
+  // DATOS DEL RECEPTOR
+  // ──────────────────────────────────────────────────────────────
+  y += 11
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bold')
+  doc.text('CUIT: ', M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.cliente_cuit ? formatCUIT(data.cliente_cuit) : '—', M + 11, y)
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Apellido y Nombre / Razón Social: ', M + 70, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.cliente_nombre ?? 'Consumidor Final', M + 121, y)
+
+  y += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Condición frente al IVA: ', M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.condicion_iva_receptor ?? 'Consumidor Final', M + 37, y)
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Domicilio: ', M + 100, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.cliente_direccion ?? '—', M + 117, y)
+
+  y += 5
+  doc.setFont('helvetica', 'bold')
+  doc.text('Condición de venta: ', M, y)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.condicion_venta ?? 'Contado', M + 32, y)
+
+  // ──────────────────────────────────────────────────────────────
+  // TABLA DE ITEMS
+  // ──────────────────────────────────────────────────────────────
   y += 8
+
+  const bodyRows = data.items.map((item, idx) => [
+    item.codigo ?? String(idx + 1).padStart(3, '0'),
+    item.nombre,
+    String(item.cantidad),
+    item.unidad_medida ?? 'un',
+    formatMoneda(item.precio_unitario),
+    (item.bonif_pct ?? 0).toFixed(2),
+    formatMoneda(item.imp_bonif ?? 0),
+    formatMoneda(item.subtotal),
+  ])
 
   autoTable(doc, {
     startY: y,
-    head: [['Código', 'Descripción', 'Cant.', 'Precio Unit.', 'Subtotal']],
-    body: data.items.map((item, idx) => [
-      String(idx + 1).padStart(3, '0'),
-      item.nombre,
-      item.cantidad,
-      formatMoneda(item.precio_unitario),
-      formatMoneda(item.subtotal),
-    ]),
+    head: [['Código', 'Producto / Servicio', 'Cantidad', 'U. Medida', 'Precio Unit.', '% Bonif.', 'Imp. Bonif.', 'Subtotal']],
+    body: bodyRows,
     headStyles: {
-      fillColor: [45, 40, 80],
-      textColor: BLANCO,
+      fillColor: GRIS_FONDO,
+      textColor: NEGRO,
       fontStyle: 'bold',
-      fontSize: 8.5,
+      fontSize: 7.5,
       halign: 'center',
-      cellPadding: 4,
+      cellPadding: 2.5,
+      lineColor: GRIS_BORDE,
+      lineWidth: 0.3,
     },
     bodyStyles: {
-      fontSize: 8.5,
+      fontSize: 8,
       textColor: NEGRO,
-      cellPadding: 3.5,
-    },
-    alternateRowStyles: {
-      fillColor: [244, 243, 252],
+      cellPadding: 2.5,
+      lineColor: GRIS_BORDE,
+      lineWidth: 0.2,
     },
     columnStyles: {
       0: { halign: 'center', cellWidth: 18 },
-      1: { halign: 'left',   cellWidth: 90 },
-      2: { halign: 'center', cellWidth: 18 },
-      3: { halign: 'right',  cellWidth: 30 },
-      4: { halign: 'right',  cellWidth: 30 },
+      1: { halign: 'left',   cellWidth: 65 },
+      2: { halign: 'center', cellWidth: 16 },
+      3: { halign: 'center', cellWidth: 18 },
+      4: { halign: 'right',  cellWidth: 22 },
+      5: { halign: 'right',  cellWidth: 15 },
+      6: { halign: 'right',  cellWidth: 17 },
+      7: { halign: 'right',  cellWidth: 19 },
     },
     margin: { left: M, right: M },
-    tableLineColor: GRIS_CLARO,
-    tableLineWidth: 0.3,
+    theme: 'grid',
   })
 
-  // ── TOTALES ───────────────────────────────────────────────────
-  const finalY = (doc as any).lastAutoTable.finalY + 4
-  const totX = W - M - 75
-  const totW = 75
+  // ──────────────────────────────────────────────────────────────
+  // TOTALES (parte inferior derecha)
+  // ──────────────────────────────────────────────────────────────
+  type AutoTableDoc = jsPDF & { lastAutoTable?: { finalY: number } }
+  const finalTableY = (doc as AutoTableDoc).lastAutoTable?.finalY ?? y + 50
 
-  doc.setFillColor(...BLANCO)
-  doc.roundedRect(totX, finalY, totW, data.descuento > 0 ? 34 : 26, 3, 3, 'F')
-  doc.setDrawColor(...GRIS_CLARO)
-  doc.roundedRect(totX, finalY, totW, data.descuento > 0 ? 34 : 26, 3, 3, 'S')
+  // Reservamos espacio bottom-right para los totales (alineado a la altura
+  // del modelo AFIP: bien al fondo de la pagina)
+  const totY = Math.max(finalTableY + 6, H - 60)
+  const totX = W - M - 70
+  const totW = 70
 
-  let ty = finalY + 7
-  doc.setFontSize(8.5)
-  doc.setTextColor(...GRIS)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Subtotal:', totX + 4, ty)
-  doc.setTextColor(...NEGRO)
-  doc.text(formatMoneda(data.subtotal), totX + totW - 4, ty, { align: 'right' })
-
-  if (data.descuento > 0) {
-    ty += 7
-    doc.setTextColor(...GRIS)
-    doc.text('Descuento:', totX + 4, ty)
-    doc.setTextColor([200, 50, 50] as any)
-    doc.text(`- ${formatMoneda(data.descuento)}`, totX + totW - 4, ty, { align: 'right' })
-  }
-
-  // Línea separadora
-  ty += 4
-  doc.setDrawColor(...MORADO)
-  doc.setLineWidth(0.8)
-  doc.line(totX + 4, ty, totX + totW - 4, ty)
-  ty += 6
-
-  // Total destacado
-  doc.setFillColor(...MORADO)
-  doc.roundedRect(totX, ty - 4, totW, 12, 2, 2, 'F')
-  doc.setTextColor(...BLANCO)
-  doc.setFontSize(11)
+  doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.text('TOTAL:', totX + 5, ty + 4)
-  doc.text(formatMoneda(data.total), totX + totW - 5, ty + 4, { align: 'right' })
 
-  // ── CAE ───────────────────────────────────────────────────────
-  if (data.cae) {
-    const caeY = finalY
-    doc.setFillColor(240, 248, 255)
-    doc.roundedRect(M, caeY, 90, 26, 3, 3, 'F')
-    doc.setDrawColor(...VERDE)
-    doc.setLineWidth(0.5)
-    doc.roundedRect(M, caeY, 90, 26, 3, 3, 'S')
+  // Subtotal
+  doc.text('Subtotal: $', totX, totY)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatMoneda(data.subtotal, false), totX + totW, totY, { align: 'right' })
 
-    doc.setTextColor(...VERDE)
-    doc.setFontSize(7.5)
+  // Importe Otros Tributos (siempre 0 en Factura C)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Importe Otros Tributos: $', totX, totY + 5)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatMoneda(0, false), totX + totW, totY + 5, { align: 'right' })
+
+  // Importe Total
+  doc.setFont('helvetica', 'bold')
+  doc.text('Importe Total: $', totX, totY + 10)
+  doc.text(formatMoneda(data.total, false), totX + totW, totY + 10, { align: 'right' })
+
+  // ──────────────────────────────────────────────────────────────
+  // FOOTER: CAE, codigo de barras simulado, comprobante autorizado
+  // ──────────────────────────────────────────────────────────────
+  const footerY = H - 22
+
+  // Linea separadora superior del footer
+  doc.setLineWidth(0.3)
+  doc.line(M, footerY, W - M, footerY)
+
+  // AFIP logo area (placeholder rectangulo)
+  doc.setLineWidth(0.2)
+  doc.rect(M, footerY + 2, 18, 14)
+  doc.setFontSize(6)
+  doc.setFont('helvetica', 'bold')
+  doc.text('ARCA', M + 9, footerY + 9, { align: 'center' })
+  doc.setFontSize(5)
+  doc.setFont('helvetica', 'normal')
+  doc.text('AFIP', M + 9, footerY + 13, { align: 'center' })
+
+  // "Comprobante Autorizado" debajo
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Comprobante Autorizado', M + 22, footerY + 12)
+
+  // Pagina al centro
+  doc.text('Pág. 1/1', W / 2, footerY + 12, { align: 'center' })
+
+  // CAE Nº a la derecha
+  doc.setFont('helvetica', 'bold')
+  doc.text('CAE Nº:', W - M - 50, footerY + 8)
+  doc.setFont('helvetica', 'normal')
+  doc.text(data.cae ?? '—', W - M - 30, footerY + 8)
+
+  if (data.cae_vencimiento) {
     doc.setFont('helvetica', 'bold')
-    doc.text('✓ COMPROBANTE AUTORIZADO POR ARCA (AFIP)', M + 4, caeY + 7)
-
+    doc.text('Vto. CAE:', W - M - 50, footerY + 13)
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(...NEGRO)
-    doc.text(`CAE N°: ${data.cae}`, M + 4, caeY + 14)
-    doc.text(`Fecha de Vencimiento CAE: ${formatFecha(data.cae_vencimiento ?? '')}`, M + 4, caeY + 20)
-
-    // Código de barras simulado (líneas verticales decorativas)
-    for (let i = 0; i < 40; i++) {
-      const x = M + 4 + i * 2.1
-      const h = i % 3 === 0 ? 6 : 4
-      doc.setDrawColor(i % 2 === 0 ? 30 : 100, 30, 30)
-      doc.setLineWidth(i % 3 === 0 ? 1.2 : 0.6)
-      doc.line(x, caeY + 23, x, caeY + 23 + h)
-    }
+    doc.text(formatFecha(data.cae_vencimiento), W - M - 30, footerY + 13)
   }
 
-  // ── PIE DE PÁGINA ─────────────────────────────────────────────
-  const pieY = H - 18
-  doc.setFillColor(...MORADO)
-  doc.rect(0, pieY, W, 18, 'F')
-
-  doc.setTextColor(...BLANCO)
-  doc.setFontSize(7.5)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Este comprobante fue generado digitalmente por StockFlow — Software de Gestión PyME', W / 2, pieY + 7, { align: 'center' })
-  doc.text(`Fecha de impresión: ${formatFechaHora(new Date().toISOString())}`, W / 2, pieY + 13, { align: 'center' })
-
-  // Número de página
-  doc.setFontSize(7)
-  doc.text('Página 1 de 1', W - M, pieY + 10, { align: 'right' })
+  // Marca de generacion al fondo
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'italic')
+  doc.setTextColor(...GRIS_TEXTO)
+  doc.text(
+    `Generado por StockFlow · ${formatFechaHora(new Date().toISOString())}`,
+    W / 2,
+    H - 3,
+    { align: 'center' }
+  )
 
   return doc.output('blob')
 }
 
 // ── HELPERS ───────────────────────────────────────────────────
-function formatMoneda(n: number): string {
-  return '$ ' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function formatMoneda(n: number, withSymbol = true): string {
+  const num = (Number(n) || 0).toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return withSymbol ? `$ ${num}` : num
 }
 
 function formatCUIT(cuit: string): string {
@@ -358,6 +398,8 @@ function formatCUIT(cuit: string): string {
 
 function formatFecha(fecha: string): string {
   if (!fecha) return ''
+  // Acepta YYYY-MM-DD o DD/MM/YYYY
+  if (fecha.includes('/')) return fecha
   const [y, m, d] = fecha.split('-')
   if (!y || !m || !d) return fecha
   return `${d}/${m}/${y}`
@@ -374,7 +416,7 @@ export function descargarTicket(data: TicketData) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${data.tipo_comprobante}-${data.nro_factura}.pdf`
+  a.download = `FacturaC-${data.nro_factura}.pdf`
   a.click()
   URL.revokeObjectURL(url)
 }
