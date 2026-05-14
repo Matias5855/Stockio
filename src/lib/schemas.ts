@@ -99,7 +99,8 @@ export type QrRapidoInput = z.infer<typeof QrRapidoInputSchema>
 
 export const SuscripcionInputSchema = z.object({
   plan_id: z.enum(['pro', 'business']),
-  payer_email: z.string().trim().toLowerCase().email(),
+  // payer_email opcional: si no viene lo tomamos del user logueado
+  payer_email: z.string().trim().toLowerCase().email().optional(),
 })
 export type SuscripcionInput = z.infer<typeof SuscripcionInputSchema>
 

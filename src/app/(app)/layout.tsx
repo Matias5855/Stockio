@@ -16,6 +16,7 @@ const FinanzasPage     = dynamic(() => import('./finanzas/page'),     { loading:
 const ArchivosPage     = dynamic(() => import('./archivos/page'),     { loading: () => <PageLoader /> })
 const CuotasPage       = dynamic(() => import('./cuotas/page'),       { loading: () => <PageLoader /> })
 const HistorialPage    = dynamic(() => import('./historial/page'),    { loading: () => <PageLoader /> })
+const EmpleadosPage    = dynamic(() => import('./empleados/page'),    { loading: () => <PageLoader /> })
 const ConfiguracionPage = dynamic(() => import('./configuracion/page'), { loading: () => <PageLoader /> })
 
 function PageLoader() {
@@ -33,13 +34,17 @@ export const NavContext = createContext<{
 
 export const useNav = () => useContext(NavContext)
 
-const NAV = [
+// requierePremium=true -> solo aparece para orgs con plan Premium
+type NavItem = { id: string; label: string; icon: string; requierePremium?: boolean }
+
+const NAV: readonly NavItem[] = [
   { id: 'dashboard',     label: 'Dashboard',     icon: '◈' },
   { id: 'stock',         label: 'Inventario',    icon: '▦' },
   { id: 'ventas',        label: 'Ventas',        icon: '↗' },
   { id: 'finanzas',      label: 'Finanzas',      icon: '$' },
   { id: 'archivos',      label: 'Archivos',      icon: '⊞' },
   { id: 'cuotas',        label: 'Cuotas',        icon: '⊟' },
+  { id: 'empleados',     label: 'Empleados',     icon: '👥', requierePremium: true },
   { id: 'historial',     label: 'Historial',     icon: '⟲' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙' },
 ] as const
@@ -51,6 +56,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   finanzas: FinanzasPage,
   archivos: ArchivosPage,
   cuotas: CuotasPage,
+  empleados: EmpleadosPage,
   historial: HistorialPage,
   configuracion: ConfiguracionPage,
 }
@@ -239,7 +245,7 @@ export default function AppLayout() {
             </div>
 
             <nav style={{ flex: 1, padding: '10px 0' }}>
-              {NAV.map(item => (
+              {NAV.filter(item => !item.requierePremium || suscripcion?.plan_id === 'premium').map(item => (
                 <button key={item.id} onClick={() => setPage(item.id)} style={navBtnStyle(page === item.id)}>
                   <span style={{ fontSize: 16 }}>{item.icon}</span>
                   {!collapsed && <span>{item.label}</span>}

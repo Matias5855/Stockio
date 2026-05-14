@@ -70,10 +70,23 @@ export async function GET() {
 // ── POST: crear suscripción en MP (solo owner) ────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { supabase, profile } = await requireRole(['owner'])
-    const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN!
+    const { supabase, profile, user } = await requireRole(['owner'])
+    const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN
 
-    const { plan_id, payer_email } = await parseBody(req, SuscripcionInputSchema)
+    if (!ACCESS_TOKEN) {
+      return NextResponse.json({
+        error: 'Mercado Pago no esta configurado en el servidor (falta MP_ACCESS_TOKEN).',
+      }, { status: 503 })
+    }
+
+    const { plan_id, payer_email: bodyEmail } = await parseBody(req, SuscripcionInputSchema)
+    // Si el cliente no manda email, usamos el del user logueado
+    const payer_email = bodyEmail || user.email
+    if (!payer_email) {
+      return NextResponse.json({
+        error: 'No pudimos obtener tu email. Volve a iniciar sesion e intenta de nuevo.',
+      }, { status: 400 })
+    }
 
     const planConfig = PLANES_MP[plan_id]
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
@@ -91,29 +104,43 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(planConfig),
       })
       const planData = await planRes.json()
+      if (!planData.id) {
+        console.error('[Suscripcion POST] MP no creo el plan:', planData)
+        return NextResponse.json({
+          error: `Mercado Pago rechazo el plan: ${planData.message ?? 'error desconocido'}`,
+        }, { status: 502 })
+      }
       mpPlanId = planData.id
-
       await supabase.from('planes').update({ mp_plan_id: mpPlanId }).eq('id', plan_id)
     }
 
     // 2. Crear suscripción del usuario
+    const preapprovalBody = {
+      preapproval_plan_id: mpPlanId,
+      payer_email,
+      back_url: `${appUrl}/dashboard?suscripcion=ok`,
+      reason: planConfig.reason,
+      external_reference: profile.org_id,
+    }
+
     const suscRes = await fetch(`${MP_BASE}/preapproval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ACCESS_TOKEN}` },
-      body: JSON.stringify({
-        preapproval_plan_id: mpPlanId,
-        payer_email,
-        back_url: `${appUrl}/dashboard?suscripcion=ok`,
-        reason: planConfig.reason,
-        external_reference: profile.org_id,
-      }),
+      body: JSON.stringify(preapprovalBody),
     })
 
     const suscData = await suscRes.json()
 
-    if (!suscData.id) {
-      console.error('[Suscripcion POST] MP no devolvio id:', suscData.message ?? suscData)
-      return NextResponse.json({ error: 'Error creando suscripcion' }, { status: 502 })
+    if (!suscData.id || !suscData.init_point) {
+      // MP devuelve estructuras tipo: { status: 400, message: "...", cause: [{ description: "..." }] }
+      const mpMsg = suscData.message
+        ?? suscData.cause?.[0]?.description
+        ?? suscData.error
+        ?? 'no devolvio init_point'
+      console.error('[Suscripcion POST] MP rechazo preapproval:', JSON.stringify(suscData))
+      return NextResponse.json({
+        error: `Mercado Pago: ${mpMsg}. Probá con otro email o contactá soporte.`,
+      }, { status: 502 })
     }
 
     // 3. Guardar en Supabase
