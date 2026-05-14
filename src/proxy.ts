@@ -102,7 +102,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  const publicPaths  = ['/login', '/register']
+  const publicPaths  = ['/login', '/register', '/invite', '/recuperar']
   // La landing publica vive en "/" exacto — usuarios logueados son redirigidos
   // a /dashboard desde la propia page server-side, no acá.
   const isLanding    = pathname === '/'
