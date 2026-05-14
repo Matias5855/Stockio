@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { useMovimientos } from '@/lib/hooks/useMovimientos'
+import ExportarBtn from '@/components/ExportarBtn'
+import { exportarFinanzasExcel, exportarFinanzasPDF } from '@/lib/exportar'
 import { getTheme, COLORS } from '@/lib/theme'
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
@@ -55,11 +57,17 @@ export default function FinanzasPage() {
           <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>Finanzas / Caja</p>
           <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>{movimientos.length} movimientos registrados</p>
         </div>
-        <button onClick={() => setModal(true)} style={{
-          background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
-          padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
-          boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-        }}>+ Nuevo movimiento</button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <ExportarBtn
+            onExcelClick={() => exportarFinanzasExcel(filtered, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
+            onPDFClick={() => exportarFinanzasPDF(filtered, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
+          />
+          <button onClick={() => setModal(true)} style={{
+            background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+            padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+          }}>+ Nuevo movimiento</button>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
