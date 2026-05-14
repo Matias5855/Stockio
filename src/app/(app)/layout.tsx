@@ -6,6 +6,7 @@ import { syncManager } from '@/lib/sync/syncManager'
 import { getTheme, COLORS } from '@/lib/theme'
 import BusquedaGlobal from '@/components/BusquedaGlobal'
 import Notificaciones from '@/components/Notificaciones'
+import Paywall, { TrialBanner, EstadoSuscripcion } from '@/components/Paywall'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -54,6 +55,13 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   configuracion: ConfiguracionPage,
 }
 
+type SuscripcionInfo = {
+  estado: EstadoSuscripcion
+  plan_id: 'normal' | 'premium' | string
+  trial_fin?: string | null
+  email?: string
+}
+
 export default function AppLayout() {
   const supabase = useMemo(() => createClient(), [])
   const [page, setPage] = useState('dashboard')
@@ -61,6 +69,8 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
   const [orgNombre, setOrgNombre] = useState('Gestión PyME')
+  const [suscripcion, setSuscripcion] = useState<SuscripcionInfo | null>(null)
+  const [suscripcionLoaded, setSuscripcionLoaded] = useState(false)
 
   useEffect(() => {
     syncManager.init()
@@ -71,6 +81,24 @@ export default function AppLayout() {
     const savedDark = localStorage.getItem('sf_dark_mode')
     if (savedDark === '1') setIsDark(true)
 
+    // Verificar estado de suscripcion al cargar
+    fetch('/api/suscripcion')
+      .then(r => r.ok ? r.json() : null)
+      .then(async data => {
+        if (data && data.estado) {
+          // Tambien levanto el email del user para el paywall
+          const { data: { user } } = await supabase.auth.getUser()
+          setSuscripcion({
+            estado: data.estado,
+            plan_id: data.plan_id ?? 'normal',
+            trial_fin: data.trial_fin,
+            email: user?.email,
+          })
+        }
+        setSuscripcionLoaded(true)
+      })
+      .catch(() => setSuscripcionLoaded(true))
+
     const onOnline = () => { setIsOffline(false); syncManager.sync() }
     const onOffline = () => setIsOffline(true)
     window.addEventListener('online', onOnline)
@@ -79,6 +107,7 @@ export default function AppLayout() {
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleLogout = useCallback(async () => {
@@ -118,6 +147,32 @@ export default function AppLayout() {
 
   const ActivePage = PAGE_COMPONENTS[page] ?? DashboardPage
 
+  // Estado del paywall:
+  // - vencida/cancelada/pausada -> paywall fullscreen bloqueante
+  // - trial con menos de 7 dias -> banner amarillo NO bloqueante
+  const necesitaPaywall = suscripcionLoaded && suscripcion && (
+    suscripcion.estado === 'vencida' ||
+    suscripcion.estado === 'cancelada' ||
+    suscripcion.estado === 'pausada'
+  )
+
+  const diasTrialRestantes = (() => {
+    if (!suscripcion || suscripcion.estado !== 'trial' || !suscripcion.trial_fin) return null
+    const dias = Math.ceil((new Date(suscripcion.trial_fin).getTime() - Date.now()) / (1000 * 3600 * 24))
+    return dias > 0 && dias <= 7 ? dias : null
+  })()
+
+  // Si esta vencida, mostramos SOLO el paywall (bloquea todo el contenido)
+  if (necesitaPaywall && suscripcion) {
+    return (
+      <Paywall
+        estado={suscripcion.estado}
+        planId={suscripcion.plan_id}
+        email={suscripcion.email}
+      />
+    )
+  }
+
   return (
     <NavContext.Provider value={navValue}>
       <div style={{
@@ -135,6 +190,14 @@ export default function AppLayout() {
           <div style={{ background: COLORS.warning, color: '#FFFFFF', padding: '8px 20px', fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0, zIndex: 100 }}>
             ⚠ Sin conexión — los cambios se guardan localmente y se sincronizan al reconectarte
           </div>
+        )}
+
+        {/* Banner trial proximo a vencer */}
+        {diasTrialRestantes !== null && suscripcion && (
+          <TrialBanner
+            diasRestantes={diasTrialRestantes}
+            onPagar={() => setPage('configuracion')}
+          />
         )}
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
