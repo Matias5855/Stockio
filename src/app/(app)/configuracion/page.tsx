@@ -1,12 +1,28 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import { getTheme, COLORS } from '@/lib/theme'
+
+type Organization = {
+  id: string
+  name?: string
+  cuit?: string
+  direccion?: string
+  telefono?: string
+  email_negocio?: string
+  iibb?: string
+  inicio_actividades?: string
+  condicion_iva?: string
+  punto_venta?: string
+  mp_connected?: boolean
+  mp_user_id?: string
+}
 
 export default function ConfiguracionPage() {
   const supabase = createClient()
 
-  // ── ESTADOS ───────────────────────────────────────────────
-  const [org, setOrg] = useState<any>(null)
+  const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [guardando, setGuardando] = useState(false)
@@ -16,7 +32,15 @@ export default function ConfiguracionPage() {
     condicion_iva: 'Monotributista', punto_venta: '0001',
   })
 
-  // ── CARGAR ORG ────────────────────────────────────────────
+  const [isDark, setIsDark] = useState(false)
+  useEffect(() => {
+    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    sync()
+    const interval = setInterval(sync, 500)
+    return () => clearInterval(interval)
+  }, [])
+  const t = useMemo(() => getTheme(isDark), [isDark])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -25,10 +49,8 @@ export default function ConfiguracionPage() {
         .from('profiles').select('org_id').eq('id', user.id).single()
       if (!profile?.org_id) return
       const { data: orgData } = await supabase
-        .from('organizations')
-        .select('*')
-        .eq('id', profile.org_id).single()
-      setOrg(orgData)
+        .from('organizations').select('*').eq('id', profile.org_id).single()
+      setOrg(orgData as Organization)
       setLoading(false)
     }
 
@@ -37,9 +59,9 @@ export default function ConfiguracionPage() {
     if (params.get('mp') === 'error') setMsg({ text: '✗ Error al conectar Mercado Pago', ok: false })
 
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── CARGAR FORM CUANDO LLEGA ORG ─────────────────────────
   useEffect(() => {
     if (!org) return
     setFormNegocio({
@@ -55,52 +77,43 @@ export default function ConfiguracionPage() {
     })
   }, [org])
 
-  // ── GUARDAR DATOS DEL NEGOCIO ─────────────────────────────
   const guardarNegocio = async () => {
     setGuardando(true)
     const { error } = await supabase
-      .from('organizations')
-      .update(formNegocio)
-      .eq('id', org?.id)
+      .from('organizations').update(formNegocio).eq('id', org?.id ?? '')
     if (error) alert(error.message)
     else setMsg({ text: '✓ Datos del negocio actualizados', ok: true })
     setGuardando(false)
+    setTimeout(() => setMsg(null), 4000)
   }
 
-  // ── ESTILOS ───────────────────────────────────────────────
   const card: React.CSSProperties = {
-    background: '#17171C',
-    border: '1px solid rgba(255,255,255,0.08)',
+    background: t.card,
+    border: `1px solid ${t.borderCard}`,
     borderRadius: 12,
-    padding: '24px',
+    padding: 24,
   }
 
   const inp: React.CSSProperties = {
-    width: '100%',
-    boxSizing: 'border-box',
-    background: '#1E1E26',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    padding: '9px 12px',
-    color: '#F0EFF8',
-    fontSize: 13,
-    outline: 'none',
+    width: '100%', boxSizing: 'border-box',
+    background: t.card, border: `1px solid ${t.border}`, borderRadius: 8,
+    padding: '10px 12px', color: t.text, fontSize: 13, outline: 'none',
   }
 
-  if (loading) return <p style={{ color: '#7A7A95' }}>Cargando...</p>
+  if (loading) return <p style={{ color: t.textMuted }}>Cargando…</p>
 
-  // ── RENDER ────────────────────────────────────────────────
   return (
     <div>
-      <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700 }}>Configuración</p>
-      <p style={{ margin: '0 0 28px', fontSize: 13, color: '#7A7A95' }}>Ajustes de tu negocio</p>
+      <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>Configuración</p>
+      <p style={{ margin: '0 0 24px', fontSize: 13, color: t.textMuted }}>Ajustes de tu negocio</p>
 
       {msg && (
         <div style={{
-          background: msg.ok ? 'rgba(34,201,122,0.12)' : 'rgba(224,85,85,0.12)',
-          border: `1px solid ${msg.ok ? 'rgba(34,201,122,0.3)' : 'rgba(224,85,85,0.3)'}`,
+          background: msg.ok ? COLORS.badge.ok.bg : COLORS.badge.error.bg,
+          border: `1px solid ${msg.ok ? '#86EFAC' : '#FECDD3'}`,
           borderRadius: 10, padding: '12px 16px', marginBottom: 20,
-          fontSize: 13, fontWeight: 600, color: msg.ok ? '#22C97A' : '#E05555',
+          fontSize: 13, fontWeight: 600,
+          color: msg.ok ? COLORS.badge.ok.text : COLORS.badge.error.text,
         }}>
           {msg.text}
         </div>
@@ -108,30 +121,30 @@ export default function ConfiguracionPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* ── DATOS DEL NEGOCIO ── */}
+        {/* DATOS DEL NEGOCIO */}
         <div style={card}>
-          <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 700, color: '#F0EFF8' }}>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: t.text }}>
             Datos del negocio
           </p>
-          <p style={{ margin: '0 0 18px', fontSize: 12, color: '#7A7A95' }}>
-            Estos datos aparecen en todas las facturas y comprobantes que generés.
+          <p style={{ margin: '0 0 18px', fontSize: 12, color: t.textMuted }}>
+            Aparecen en todas las facturas y comprobantes.
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {[
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            {([
               { key: 'name',               label: 'Nombre del negocio',     placeholder: 'Mi Comercio S.A.' },
               { key: 'cuit',               label: 'CUIT',                    placeholder: '20-12345678-9' },
-              { key: 'direccion',          label: 'Dirección',               placeholder: 'Av. San Martín 123, Resistencia' },
+              { key: 'direccion',          label: 'Dirección',               placeholder: 'Av. San Martín 123' },
               { key: 'telefono',           label: 'Teléfono',                placeholder: '0362-4xxxxxx' },
               { key: 'email_negocio',      label: 'Email del negocio',       placeholder: 'contacto@minegocio.com' },
               { key: 'iibb',               label: 'Ingresos Brutos (IIBB)',  placeholder: '000-123456-0' },
               { key: 'inicio_actividades', label: 'Inicio de actividades',   placeholder: '01/01/2024' },
               { key: 'punto_venta',        label: 'Punto de venta',          placeholder: '0001' },
-            ].map(f => (
+            ] as const).map(f => (
               <div key={f.key}>
-                <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95', fontWeight: 500 }}>{f.label}</p>
+                <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>{f.label}</p>
                 <input
-                  value={(formNegocio as any)[f.key]}
+                  value={formNegocio[f.key]}
                   onChange={e => setFormNegocio(p => ({ ...p, [f.key]: e.target.value }))}
                   placeholder={f.placeholder}
                   style={inp}
@@ -140,7 +153,7 @@ export default function ConfiguracionPage() {
             ))}
 
             <div>
-              <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95', fontWeight: 500 }}>Condición IVA</p>
+              <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Condición IVA</p>
               <select
                 value={formNegocio.condicion_iva}
                 onChange={e => setFormNegocio(p => ({ ...p, condicion_iva: e.target.value }))}
@@ -154,72 +167,370 @@ export default function ConfiguracionPage() {
             </div>
           </div>
 
-          <button
-            onClick={guardarNegocio}
-            disabled={guardando}
-            style={{ marginTop: 20, background: '#7C6FE0', border: 'none', borderRadius: 8, padding: '10px 24px', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: guardando ? 0.7 : 1 }}
-          >
-            {guardando ? 'Guardando...' : '💾 Guardar datos'}
+          <button onClick={guardarNegocio} disabled={guardando} style={{
+            marginTop: 22, background: COLORS.primary, border: 'none', borderRadius: 8,
+            padding: '11px 24px', color: '#fff', fontWeight: 700, fontSize: 14,
+            cursor: 'pointer', opacity: guardando ? 0.7 : 1,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+          }}>
+            {guardando ? 'Guardando…' : '💾 Guardar datos'}
           </button>
         </div>
 
-        {/* ── MERCADO PAGO ── */}
+        {/* MERCADO PAGO */}
         <div style={card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
             <div>
-              <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#F0EFF8' }}>Mercado Pago</p>
-              <p style={{ margin: 0, fontSize: 13, color: '#7A7A95' }}>Conectá tu cuenta para recibir pagos directamente</p>
+              <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: t.text }}>Mercado Pago</p>
+              <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>Conectá tu cuenta para recibir pagos directamente</p>
             </div>
-            <span style={{ background: org?.mp_connected ? 'rgba(34,201,122,0.12)' : 'rgba(224,85,85,0.12)', color: org?.mp_connected ? '#22C97A' : '#E05555', padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 600 }}>
+            <span style={{
+              background: org?.mp_connected ? COLORS.badge.ok.bg : COLORS.badge.error.bg,
+              color: org?.mp_connected ? COLORS.badge.ok.text : COLORS.badge.error.text,
+              padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700,
+            }}>
               {org?.mp_connected ? '● Conectado' : '● Sin conectar'}
             </span>
           </div>
 
           {org?.mp_connected ? (
             <div>
-              <div style={{ background: 'rgba(34,201,122,0.08)', border: '1px solid rgba(34,201,122,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-                <p style={{ margin: 0, fontSize: 13, color: '#22C97A' }}>
-                  ✓ Los pagos de cuotas van directo a tu cuenta de Mercado Pago
+              <div style={{
+                background: COLORS.badge.ok.bg, border: '1px solid #86EFAC',
+                borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+              }}>
+                <p style={{ margin: '0 0 4px', fontSize: 13, color: COLORS.badge.ok.text, fontWeight: 700 }}>
+                  ✓ Conectado — ya podés cobrar a tus clientes
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.badge.ok.text, lineHeight: 1.5 }}>
+                  Los pagos por link, QR y cuotas online van directo a tu cuenta de Mercado Pago. StockFlow no toca ese dinero.
                 </p>
                 {org?.mp_user_id && (
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: '#7A7A95' }}>ID usuario MP: {org.mp_user_id}</p>
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: t.textMuted }}>ID MP: {org.mp_user_id}</p>
                 )}
               </div>
-              <a href="/api/mp/connect" style={{ background: 'rgba(124,111,224,0.15)', border: '1px solid rgba(124,111,224,0.3)', borderRadius: 8, padding: '9px 18px', color: '#7C6FE0', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }}>
+              <a href="/api/mp/connect" style={{
+                background: '#CCFBF1', border: `1px solid ${COLORS.primary}`,
+                borderRadius: 8, padding: '10px 18px',
+                color: COLORS.primary, fontSize: 13, fontWeight: 700,
+                textDecoration: 'none', display: 'inline-block',
+              }}>
                 🔄 Reconectar cuenta
               </a>
             </div>
           ) : (
             <div>
-              <div style={{ background: 'rgba(224,160,48,0.08)', border: '1px solid rgba(224,160,48,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-                <p style={{ margin: '0 0 4px', fontSize: 13, color: '#E0A030', fontWeight: 600 }}>⚠ Cuenta no conectada</p>
-                <p style={{ margin: 0, fontSize: 12, color: '#7A7A95', lineHeight: 1.6 }}>
-                  Sin conectar, los links de pago usarán la cuenta de StockFlow. Conectá tu cuenta para que los pagos vayan directo a vos.
+              <div style={{
+                background: COLORS.badge.bajo.bg, border: '1px solid #FCD34D',
+                borderRadius: 10, padding: '14px 18px', marginBottom: 16,
+              }}>
+                <p style={{ margin: '0 0 6px', fontSize: 14, color: COLORS.badge.bajo.text, fontWeight: 800 }}>
+                  🔌 Conectá Mercado Pago para cobrar a tus clientes
+                </p>
+                <p style={{ margin: 0, fontSize: 13, color: COLORS.badge.bajo.text, lineHeight: 1.55 }}>
+                  Para que tus clientes puedan pagarte por <strong>link de pago, QR o cuotas online</strong>,
+                  necesitás conectar tu cuenta de Mercado Pago. El dinero va directo a vos,
+                  StockFlow no toca ese dinero.
+                </p>
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: COLORS.badge.bajo.text }}>
+                  Es gratis y tarda 30 segundos.
                 </p>
               </div>
-              <a href="/api/mp/connect" style={{ display: 'inline-block', background: '#009EE3', border: 'none', borderRadius: 8, padding: '11px 20px', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none', cursor: 'pointer' }}>
-                Conectar con Mercado Pago
+              <a href="/api/mp/connect" style={{
+                display: 'inline-block', background: '#009EE3', border: 'none', borderRadius: 8,
+                padding: '12px 22px', color: '#fff', fontSize: 14, fontWeight: 700,
+                textDecoration: 'none', cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,158,227,0.25)',
+              }}>
+                Conectar con Mercado Pago →
               </a>
             </div>
           )}
         </div>
 
-        {/* ── QR COBRO RÁPIDO ── */}
+        {/* QR COBRO RÁPIDO */}
         {org?.mp_connected && (
           <div style={card}>
-            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#F0EFF8' }}>QR de cobro rápido</p>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#7A7A95' }}>Generá un QR para cobros instantáneos sin registrar una venta</p>
-            <QuickQR orgId={org?.id} />
+            <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: t.text }}>QR de cobro rápido</p>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: t.textMuted }}>Generá un QR para cobros instantáneos sin registrar una venta</p>
+            <QuickQR isDark={isDark} />
           </div>
         )}
+
+        {/* FACTURACIÓN ELECTRÓNICA */}
+        <ArcaConfigSection isDark={isDark} />
 
       </div>
     </div>
   )
 }
 
-// ── COMPONENTE QR ─────────────────────────────────────────────
-function QuickQR({ orgId }: { orgId: string }) {
+// ── FACTURACIÓN ELECTRÓNICA (ARCA/AFIP) ────────────────────────
+type ArcaStatus = {
+  activado: boolean
+  cuit: string | null
+  punto_venta: string | null
+  ambiente: 'testing' | 'produccion' | null
+  tiene_certificado: boolean
+  encryption_ready: boolean
+}
+
+function ArcaConfigSection({ isDark }: { isDark: boolean }) {
+  const t = useMemo(() => getTheme(isDark), [isDark])
+  const [status, setStatus] = useState<ArcaStatus | null>(null)
+  const [modal, setModal] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [form, setForm] = useState({
+    cuit: '', punto_venta: '0001',
+    ambiente: 'testing' as 'testing' | 'produccion',
+    cert_pem: '', private_key_pem: '',
+    activado: true,
+  })
+
+  const cargarStatus = async () => {
+    try {
+      const res = await fetch('/api/arca/configurar')
+      if (res.ok) setStatus(await res.json())
+    } catch {}
+  }
+  useEffect(() => { cargarStatus() }, [])
+
+  const guardar = async () => {
+    setGuardando(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/arca/configurar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setMsg({ text: '✓ Facturación electrónica configurada', ok: true })
+        setModal(false)
+        cargarStatus()
+        setForm(f => ({ ...f, cert_pem: '', private_key_pem: '' }))
+      } else {
+        setMsg({ text: data.error ?? 'Error', ok: false })
+      }
+    } catch {
+      setMsg({ text: 'Error de conexión', ok: false })
+    }
+    setGuardando(false)
+    setTimeout(() => setMsg(null), 5000)
+  }
+
+  const card: React.CSSProperties = {
+    background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 12, padding: 24,
+  }
+  const inp: React.CSSProperties = {
+    width: '100%', boxSizing: 'border-box',
+    background: t.card, border: `1px solid ${t.border}`, borderRadius: 8,
+    padding: '10px 12px', color: t.text, fontSize: 13, outline: 'none',
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: t.text }}>
+            Facturación Electrónica (ARCA / AFIP)
+          </p>
+          <p style={{ margin: 0, fontSize: 13, color: t.textMuted, maxWidth: 520, lineHeight: 1.5 }}>
+            Conectá tus credenciales fiscales para que StockFlow pida el CAE automáticamente a ARCA y emita Facturas C oficiales con validez legal.
+          </p>
+        </div>
+        {status && (
+          <span style={{
+            background: status.activado && status.tiene_certificado ? COLORS.badge.ok.bg : COLORS.badge.bajo.bg,
+            color: status.activado && status.tiene_certificado ? COLORS.badge.ok.text : COLORS.badge.bajo.text,
+            padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}>
+            {status.activado && status.tiene_certificado ? '● Activado' : '● No configurado'}
+          </span>
+        )}
+      </div>
+
+      {msg && (
+        <div style={{
+          background: msg.ok ? COLORS.badge.ok.bg : COLORS.badge.error.bg,
+          color: msg.ok ? COLORS.badge.ok.text : COLORS.badge.error.text,
+          border: `1px solid ${msg.ok ? '#86EFAC' : '#FECDD3'}`,
+          borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600,
+        }}>{msg.text}</div>
+      )}
+
+      {status && !status.encryption_ready && (
+        <div style={{
+          background: COLORS.badge.error.bg, color: COLORS.badge.error.text,
+          border: `1px solid #FECDD3`, borderRadius: 10, padding: '12px 16px', marginBottom: 14,
+        }}>
+          <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700 }}>⚠ Encriptación no configurada en el servidor</p>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
+            Falta la variable de entorno <code>STOCKFLOW_ENCRYPTION_KEY</code>. Sin esto no podemos guardar
+            las credenciales de forma segura. Contactá al administrador del sistema.
+          </p>
+        </div>
+      )}
+
+      {status?.activado && status?.tiene_certificado ? (
+        <div>
+          <div style={{
+            background: COLORS.badge.ok.bg, border: '1px solid #86EFAC',
+            borderRadius: 10, padding: '12px 16px', marginBottom: 14,
+          }}>
+            <p style={{ margin: '0 0 4px', fontSize: 13, color: COLORS.badge.ok.text, fontWeight: 700 }}>
+              ✓ Listo para emitir facturas con CAE
+            </p>
+            <div style={{ fontSize: 12, color: COLORS.badge.ok.text, lineHeight: 1.6 }}>
+              CUIT: <strong>{status.cuit}</strong> · Punto de venta: <strong>{status.punto_venta}</strong> · Ambiente: <strong style={{ textTransform: 'capitalize' }}>{status.ambiente}</strong>
+            </div>
+          </div>
+          <button onClick={() => setModal(true)} style={{
+            background: '#CCFBF1', border: `1px solid ${COLORS.primary}`, borderRadius: 8,
+            padding: '10px 18px', color: COLORS.primary, fontSize: 13, fontWeight: 700,
+            cursor: 'pointer',
+          }}>
+            🔄 Cambiar credenciales
+          </button>
+        </div>
+      ) : (
+        <div>
+          <details style={{ marginBottom: 14 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 13, color: t.textMuted, fontWeight: 600, padding: '6px 0' }}>
+              ¿Cómo obtengo mi certificado AFIP? (instrucciones)
+            </summary>
+            <div style={{
+              marginTop: 8, padding: '12px 14px',
+              background: isDark ? 'rgba(94,234,212,0.06)' : '#F0FDFA',
+              border: `1px solid ${t.borderCard}`, borderRadius: 8,
+              fontSize: 12, color: t.text, lineHeight: 1.6,
+            }}>
+              <ol style={{ margin: 0, paddingLeft: 18 }}>
+                <li>Entrá a <strong>auth.afip.gob.ar</strong> con tu CUIT y clave fiscal.</li>
+                <li>Buscá el servicio <strong>“Administrador de Relaciones de Clave Fiscal”</strong>.</li>
+                <li>En <strong>“Nuevo Certificado Digital”</strong>, generá un certificado con alias <code>stockflow</code>.</li>
+                <li>Vinculá el certificado al servicio <strong>“Facturación Electrónica” (wsfe)</strong>.</li>
+                <li>Descargá el archivo <strong>.crt</strong> (certificado) y guardá tu <strong>.key</strong> (clave privada).</li>
+                <li>Pegá ambos abajo. StockFlow los guarda <strong>encriptados</strong> en la base de datos.</li>
+              </ol>
+              <p style={{ margin: '8px 0 0', color: t.textMuted }}>
+                Si nunca lo hiciste, podés empezar con <strong>ambiente Testing</strong> para probar sin emitir facturas reales.
+              </p>
+            </div>
+          </details>
+          <button onClick={() => setModal(true)} disabled={!status?.encryption_ready} style={{
+            background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+            padding: '12px 22px', cursor: status?.encryption_ready ? 'pointer' : 'not-allowed',
+            fontWeight: 700, fontSize: 14, opacity: status?.encryption_ready ? 1 : 0.5,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+          }}>
+            Configurar AFIP →
+          </button>
+        </div>
+      )}
+
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(4,47,46,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{
+            background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
+            padding: 28, width: '100%', maxWidth: 600, maxHeight: '92vh', overflowY: 'auto',
+            boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
+          }}>
+            <p style={{ margin: '0 0 6px', fontSize: 19, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
+              Configurar AFIP / ARCA
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: t.textMuted }}>
+              Los datos se guardan encriptados con AES-256-GCM. Nadie en StockFlow puede ver tu clave privada.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
+              <div>
+                <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>CUIT</p>
+                <input value={form.cuit} onChange={e => setForm(p => ({ ...p, cuit: e.target.value }))} placeholder="20-12345678-9" style={inp} />
+              </div>
+              <div>
+                <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Punto de venta</p>
+                <input value={form.punto_venta} onChange={e => setForm(p => ({ ...p, punto_venta: e.target.value }))} style={inp} />
+              </div>
+              <div>
+                <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Ambiente</p>
+                <select value={form.ambiente} onChange={e => setForm(p => ({ ...p, ambiente: e.target.value as 'testing' | 'produccion' }))} style={inp}>
+                  <option value="testing">Testing (homologación)</option>
+                  <option value="produccion">Producción (facturas reales)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
+                Certificado (.crt o .pem) — pegá el contenido completo
+              </p>
+              <textarea
+                value={form.cert_pem}
+                onChange={e => setForm(p => ({ ...p, cert_pem: e.target.value }))}
+                placeholder={`-----BEGIN CERTIFICATE-----\nMIIDXTCCAk...\n-----END CERTIFICATE-----`}
+                style={{ ...inp, minHeight: 100, fontFamily: 'monospace', fontSize: 11 }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
+                Clave privada (.key o .pem) — pegá el contenido completo
+              </p>
+              <textarea
+                value={form.private_key_pem}
+                onChange={e => setForm(p => ({ ...p, private_key_pem: e.target.value }))}
+                placeholder={`-----BEGIN PRIVATE KEY-----\nMIIEvQIBA...\n-----END PRIVATE KEY-----`}
+                style={{ ...inp, minHeight: 100, fontFamily: 'monospace', fontSize: 11 }}
+              />
+            </div>
+
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px', background: isDark ? 'rgba(94,234,212,0.06)' : '#F0FDFA',
+              border: `1px solid ${t.borderCard}`, borderRadius: 8,
+              cursor: 'pointer', marginBottom: 16,
+            }}>
+              <input
+                type="checkbox"
+                checked={form.activado}
+                onChange={e => setForm(p => ({ ...p, activado: e.target.checked }))}
+                style={{ width: 16, height: 16 }}
+              />
+              <span style={{ fontSize: 13, color: t.text, fontWeight: 600 }}>
+                Activar facturación electrónica
+              </span>
+              <span style={{ fontSize: 12, color: t.textMuted }}>
+                (si la desactivás, los PDFs salen sin CAE)
+              </span>
+            </label>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => setModal(false)} style={{
+                background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
+                padding: '10px 18px', cursor: 'pointer', color: t.textMuted, fontSize: 13, fontWeight: 600,
+              }}>Cancelar</button>
+              <button onClick={guardar} disabled={guardando} style={{
+                background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+                padding: '10px 22px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                opacity: guardando ? 0.7 : 1,
+                boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+              }}>
+                {guardando ? 'Guardando…' : 'Guardar y activar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuickQR({ isDark }: { isDark: boolean }) {
+  const t = useMemo(() => getTheme(isDark), [isDark])
   const [monto, setMonto] = useState('')
   const [desc, setDesc] = useState('')
   const [qrUrl, setQrUrl] = useState<string | null>(null)
@@ -229,7 +540,7 @@ function QuickQR({ orgId }: { orgId: string }) {
     if (!monto) return
     setLoading(true)
     try {
-      const res = await window.fetch('/api/mp/qr-rapido', {
+      const res = await fetch('/api/mp/qr-rapido', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ monto: +monto, descripcion: desc || 'Cobro rápido' }),
@@ -242,50 +553,57 @@ function QuickQR({ orgId }: { orgId: string }) {
   }
 
   const inp: React.CSSProperties = {
-    background: '#1E1E26', border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8, padding: '9px 12px', color: '#F0EFF8',
-    fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box',
+    width: '100%', boxSizing: 'border-box',
+    background: t.card, border: `1px solid ${t.border}`, borderRadius: 8,
+    padding: '10px 12px', color: t.text, fontSize: 13, outline: 'none',
   }
 
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginBottom: 12 }}>
         <div>
-          <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95' }}>Monto ($)</p>
+          <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Monto ($)</p>
           <input type="number" value={monto} onChange={e => setMonto(e.target.value)} placeholder="15000" style={inp} />
         </div>
         <div>
-          <p style={{ margin: '0 0 5px', fontSize: 12, color: '#7A7A95' }}>Descripción</p>
+          <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Descripción</p>
           <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: Seña remera" style={inp} />
         </div>
       </div>
 
-      <button
-        onClick={generar}
-        disabled={loading || !monto}
-        style={{ background: '#009EE3', border: 'none', borderRadius: 8, padding: '10px 20px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: loading ? 0.7 : 1 }}
-      >
-        {loading ? 'Generando...' : '📱 Generar QR de cobro'}
+      <button onClick={generar} disabled={loading || !monto} style={{
+        background: '#009EE3', border: 'none', borderRadius: 8,
+        padding: '11px 22px', color: '#fff', fontWeight: 700,
+        cursor: 'pointer', fontSize: 14, opacity: loading ? 0.7 : 1,
+        boxShadow: '0 4px 12px rgba(0,158,227,0.25)',
+      }}>
+        {loading ? 'Generando…' : '📱 Generar QR de cobro'}
       </button>
 
       {qrUrl && (
         <div style={{ marginTop: 20, textAlign: 'center' }}>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#7A7A95' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: t.textMuted }}>
             Mostrá este QR al cliente para que pague con Mercado Pago
           </p>
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&bgcolor=17171C&color=F0EFF8&margin=16`}
+          <Image
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&margin=16`}
             alt="QR de pago"
-            style={{ borderRadius: 12, border: '4px solid #7C6FE0' }}
+            width={200}
+            height={200}
+            unoptimized
+            style={{ borderRadius: 12, border: `4px solid ${COLORS.primary}` }}
           />
-          <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <a href={qrUrl} target="_blank" rel="noreferrer"
-              style={{ background: 'rgba(0,158,227,0.15)', border: '1px solid rgba(0,158,227,0.3)', borderRadius: 8, padding: '8px 16px', color: '#009EE3', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
+          <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href={qrUrl} target="_blank" rel="noreferrer" style={{
+              background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 8,
+              padding: '8px 16px', color: '#1E40AF', fontSize: 12, fontWeight: 700, textDecoration: 'none',
+            }}>
               🔗 Abrir link
             </a>
-            <button
-              onClick={() => navigator.clipboard.writeText(qrUrl).then(() => alert('¡Link copiado!'))}
-              style={{ background: 'rgba(124,111,224,0.15)', border: '1px solid rgba(124,111,224,0.3)', borderRadius: 8, padding: '8px 16px', color: '#7C6FE0', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            <button onClick={() => navigator.clipboard.writeText(qrUrl).then(() => alert('¡Link copiado!'))} style={{
+              background: '#CCFBF1', border: `1px solid ${COLORS.primary}`, borderRadius: 8,
+              padding: '8px 16px', color: COLORS.primary, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>
               📋 Copiar link
             </button>
           </div>

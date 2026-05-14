@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getTheme, COLORS } from '@/lib/theme'
 
 type Notif = {
   id: string
@@ -15,9 +16,23 @@ export default function Notificaciones() {
   const supabase = createClient()
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [open, setOpen] = useState(false)
+  const [isDark, setIsDark] = useState(false)
+
+  // Sincronizar con el toggle del layout
+  useEffect(() => {
+    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    sync()
+    const onStorage = () => sync()
+    window.addEventListener('storage', onStorage)
+    const interval = setInterval(sync, 500)
+    return () => { window.removeEventListener('storage', onStorage); clearInterval(interval) }
+  }, [])
+
+  const t = useMemo(() => getTheme(isDark), [isDark])
 
   useEffect(() => {
     generarNotifs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const generarNotifs = async () => {
@@ -25,14 +40,6 @@ export default function Notificaciones() {
     if (!orgId) return
 
     const nuevas: Notif[] = []
-
-    // 1. Stock bajo
-    const { data: stockBajo } = await supabase
-      .from('productos')
-      .select('nombre, cantidad, stock_minimo')
-      .eq('org_id', orgId)
-      .eq('activo', true)
-      .lte('cantidad', supabase.rpc as any)
 
     const { data: productos } = await supabase
       .from('productos')
@@ -52,10 +59,9 @@ export default function Notificaciones() {
       })
     }
 
-    // 2. Cuotas vencidas
     const { data: cuotasVencidas } = await supabase
       .from('cuota_pagos')
-      .select('id, cuotas_ventas(cliente_nombre)')
+      .select('id')
       .eq('org_id', orgId)
       .eq('estado', 'vencida')
 
@@ -70,7 +76,6 @@ export default function Notificaciones() {
       })
     }
 
-    // 3. Trial por vencer
     const { data: suscripcion } = await supabase
       .from('suscripciones')
       .select('estado, trial_fin')
@@ -85,15 +90,14 @@ export default function Notificaciones() {
         nuevas.push({
           id: 'trial-vence',
           tipo: 'trial',
-          titulo: `Tu prueba gratuita vence en ${diasRestantes} día${diasRestantes > 1 ? 's' : ''}`,
-          mensaje: 'Agregá tu método de pago para continuar usando StockFlow sin interrupciones',
+          titulo: `Tu prueba vence en ${diasRestantes} día${diasRestantes > 1 ? 's' : ''}`,
+          mensaje: 'Agregá tu método de pago para continuar sin interrupciones',
           leida: false,
           fecha: new Date().toISOString(),
         })
       }
     }
 
-    // 4. Ventas pendientes de cobro
     const { data: ventas } = await supabase
       .from('ventas')
       .select('total')
@@ -122,11 +126,12 @@ export default function Notificaciones() {
     trial: '⚡',
   }
 
-  const colores: Record<string, string> = {
-    stock_bajo: '#E0A030',
-    cuota_vencida: '#E05555',
-    pago_recibido: '#3B8EEA',
-    trial: '#7C6FE0',
+  // Tonos del color por tipo
+  const tinte: Record<string, string> = {
+    stock_bajo:    COLORS.warning,
+    cuota_vencida: COLORS.danger,
+    pago_recibido: COLORS.secondary,
+    trial:         COLORS.primary,
   }
 
   const sinLeer = notifs.filter(n => !n.leida).length
@@ -135,16 +140,30 @@ export default function Notificaciones() {
     <div style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(v => !v)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7A7A95', padding: 4, position: 'relative', display: 'flex', alignItems: 'center' }}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: t.textMuted,
+          padding: 6,
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          borderRadius: 8,
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : '#CCFBF1'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        aria-label="Notificaciones"
       >
         <span style={{ fontSize: 20 }}>🔔</span>
         {sinLeer > 0 && (
           <span style={{
-            position: 'absolute', top: 0, right: 0,
-            background: '#E05555', color: '#fff',
+            position: 'absolute', top: 2, right: 2,
+            background: COLORS.danger, color: '#fff',
             borderRadius: '50%', width: 16, height: 16,
             fontSize: 10, fontWeight: 700,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `2px solid ${t.card}`,
           }}>
             {sinLeer}
           </span>
@@ -156,18 +175,23 @@ export default function Notificaciones() {
           <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setOpen(false)} />
           <div style={{
             position: 'absolute', right: 0, top: '110%', zIndex: 100,
-            background: '#17171C', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 14, width: 320, maxHeight: 420, overflowY: 'auto',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            background: t.card,
+            border: `1px solid ${t.borderCard}`,
+            borderRadius: 14, width: 340, maxHeight: 420, overflowY: 'auto',
+            boxShadow: isDark ? '0 8px 40px rgba(0,0,0,0.5)' : '0 12px 32px rgba(4,47,46,0.12)',
           }}>
-            <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#F0EFF8' }}>Notificaciones</p>
+            <div style={{
+              padding: '14px 16px',
+              borderBottom: `1px solid ${t.borderCard}`,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: t.text }}>Notificaciones</p>
               {sinLeer > 0 && (
                 <button
                   onClick={() => setNotifs(n => n.map(x => ({ ...x, leida: true })))}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7C6FE0', fontSize: 12, fontWeight: 600 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.primary, fontSize: 12, fontWeight: 600 }}
                 >
-                  Marcar todo como leído
+                  Marcar todo leído
                 </button>
               )}
             </div>
@@ -175,7 +199,7 @@ export default function Notificaciones() {
             {notifs.length === 0 ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
                 <p style={{ fontSize: 28, margin: '0 0 8px' }}>✅</p>
-                <p style={{ margin: 0, color: '#7A7A95', fontSize: 13 }}>Todo en orden, sin alertas</p>
+                <p style={{ margin: 0, color: t.textMuted, fontSize: 13 }}>Todo en orden, sin alertas</p>
               </div>
             ) : (
               notifs.map(n => (
@@ -184,30 +208,40 @@ export default function Notificaciones() {
                   onClick={() => setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, leida: true } : x))}
                   style={{
                     padding: '14px 16px',
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    borderBottom: `1px solid ${t.borderCard}`,
                     cursor: 'pointer',
-                    background: n.leida ? 'transparent' : 'rgba(124,111,224,0.05)',
+                    background: n.leida ? 'transparent' : (isDark ? 'rgba(13,148,136,0.08)' : '#F0FDFA'),
                     display: 'flex', gap: 12, alignItems: 'flex-start',
+                    transition: 'background 0.1s',
                   }}
                 >
                   <div style={{
                     width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                    background: `${colores[n.tipo]}20`,
+                    background: `${tinte[n.tipo]}22`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 18,
                   }}>
                     {iconos[n.tipo]}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: n.leida ? '#7A7A95' : '#F0EFF8' }}>
+                    <p style={{
+                      margin: '0 0 3px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: n.leida ? t.textMuted : t.text,
+                    }}>
                       {n.titulo}
                     </p>
-                    <p style={{ margin: 0, fontSize: 12, color: '#7A7A95', lineHeight: 1.5 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
                       {n.mensaje}
                     </p>
                   </div>
                   {!n.leida && (
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: colores[n.tipo], flexShrink: 0, marginTop: 4 }} />
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: tinte[n.tipo],
+                      flexShrink: 0, marginTop: 6,
+                    }} />
                   )}
                 </div>
               ))

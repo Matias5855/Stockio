@@ -8,15 +8,10 @@ export async function POST(req: NextRequest) {
   try {
     const { supabase, profile } = await requireOrgMember()
 
-    if (!process.env.MP_ACCESS_TOKEN) {
-      return NextResponse.json({ error: 'MP_ACCESS_TOKEN no configurado' }, { status: 500 })
-    }
-
     const { cuota_venta_id, cliente_email, monto, descripcion } =
       await parseBody(req, LinkPagoInputSchema)
 
-    // Verificar que la cuota_venta pertenezca a la org del usuario — evita
-    // que un user de otra org genere links contra cuotas ajenas.
+    // Verificar que la cuota_venta pertenezca a la org del usuario
     const { data: cuotaVenta } = await supabase
       .from('cuotas_ventas')
       .select('id, org_id')
@@ -25,6 +20,20 @@ export async function POST(req: NextRequest) {
 
     if (!cuotaVenta || cuotaVenta.org_id !== profile.org_id) {
       return NextResponse.json({ error: 'Cuota no encontrada' }, { status: 404 })
+    }
+
+    // El cobro tiene que ir a la cuenta MP de la PyME, no a la de StockFlow.
+    // Si no esta conectada, bloqueamos con un mensaje claro.
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('mp_access_token, mp_connected')
+      .eq('id', profile.org_id)
+      .single()
+
+    if (!org?.mp_connected || !org?.mp_access_token) {
+      return NextResponse.json({
+        error: 'Mercado Pago no conectado. Entrá a Configuración → Mercado Pago para conectar tu cuenta y empezar a cobrar.',
+      }, { status: 400 })
     }
 
     const { data: cuotaPago } = await supabase
@@ -40,7 +49,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${org.mp_access_token}`,
       },
       body: JSON.stringify({
         items: [{

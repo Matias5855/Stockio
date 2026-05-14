@@ -14,13 +14,14 @@ export async function POST(req: NextRequest) {
       .select('mp_access_token, mp_connected, name')
       .eq('id', profile.org_id).single()
 
-    const accessToken = org?.mp_connected && org?.mp_access_token
-      ? org.mp_access_token
-      : process.env.MP_ACCESS_TOKEN
-
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Mercado Pago no configurado' }, { status: 400 })
+    // Exigimos la cuenta MP de la PyME — no usamos la de StockFlow como fallback,
+    // porque entonces el cobro le llegaria al dueno de StockFlow, no al cliente.
+    if (!org?.mp_connected || !org?.mp_access_token) {
+      return NextResponse.json({
+        error: 'Mercado Pago no conectado. Entrá a Configuración → Mercado Pago para conectar tu cuenta y empezar a cobrar.',
+      }, { status: 400 })
     }
+    const accessToken = org.mp_access_token
 
     const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',

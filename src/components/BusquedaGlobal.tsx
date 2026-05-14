@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getTheme } from '@/lib/theme'
 
 type Resultado = {
   id: string
@@ -21,10 +22,23 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
   const [resultados, setResultados] = useState<Resultado[]>([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [isDark, setIsDark] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const timerRef = useRef<any>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Atajo de teclado Ctrl+K
+  // Sincronizar con el toggle dark/light del layout
+  useEffect(() => {
+    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    sync()
+    const onStorage = () => sync()
+    window.addEventListener('storage', onStorage)
+    const interval = setInterval(sync, 500) // pollea por si cambia desde el mismo tab
+    return () => { window.removeEventListener('storage', onStorage); clearInterval(interval) }
+  }, [])
+
+  const t = useMemo(() => getTheme(isDark), [isDark])
+
+  // Atajo Ctrl+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -43,20 +57,20 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
 
   useEffect(() => {
     if (!query.trim()) { setResultados([]); return }
-    clearTimeout(timerRef.current)
+    if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => buscar(query), 300)
-    return () => clearTimeout(timerRef.current)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
 
   const buscar = async (q: string) => {
     setLoading(true)
     const orgId = localStorage.getItem('sf_org_id')
-    if (!orgId) return
+    if (!orgId) { setLoading(false); return }
 
     const term = `%${q}%`
     const res: Resultado[] = []
 
-    // Buscar productos
     const { data: productos } = await supabase
       .from('productos').select('id, nombre, sku, cantidad, talle')
       .eq('org_id', orgId).eq('activo', true)
@@ -71,7 +85,6 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
       accion: () => { onNavegar('stock'); setOpen(false); setQuery('') },
     }))
 
-    // Buscar ventas
     const { data: ventas } = await supabase
       .from('ventas').select('id, nro_factura, cliente_nombre, total, fecha')
       .eq('org_id', orgId)
@@ -86,7 +99,6 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
       accion: () => { onNavegar('ventas'); setOpen(false); setQuery('') },
     }))
 
-    // Buscar movimientos
     const { data: movimientos } = await supabase
       .from('movimientos').select('id, descripcion, monto, tipo')
       .eq('org_id', orgId)
@@ -105,17 +117,17 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
     setLoading(false)
   }
 
-  const colores: Record<string, string> = {
-    producto: 'rgba(124,111,224,0.15)',
-    venta: 'rgba(34,201,122,0.12)',
-    movimiento: 'rgba(59,142,234,0.12)',
+  // Badges por tipo (sutiles, theme-aware)
+  const badgeBg: Record<string, string> = {
+    producto: isDark ? 'rgba(94,234,212,0.15)' : '#CCFBF1',
+    venta: isDark ? 'rgba(22,163,74,0.18)' : '#DCFCE7',
+    movimiento: isDark ? 'rgba(37,99,235,0.18)' : '#DBEAFE',
   }
 
   return (
     <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
-      {/* Input de búsqueda */}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <span style={{ position: 'absolute', left: 12, color: '#7A7A95', fontSize: 16 }}>🔍</span>
+        <span style={{ position: 'absolute', left: 12, color: t.textMuted, fontSize: 15, pointerEvents: 'none' }}>🔍</span>
         <input
           ref={inputRef}
           value={query}
@@ -123,71 +135,101 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
           onFocus={() => setOpen(true)}
           placeholder="Buscar productos, ventas, clientes… (Ctrl+K)"
           style={{
-            width: '100%', boxSizing: 'border-box',
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 10, padding: '9px 40px 9px 38px',
-            color: '#F0EFF8', fontSize: 13, outline: 'none',
+            width: '100%',
+            boxSizing: 'border-box',
+            background: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#99F6E4'}`,
+            borderRadius: 10,
+            padding: '10px 40px 10px 38px',
+            color: t.text,
+            fontSize: 13,
+            outline: 'none',
+            transition: 'border-color 0.12s, box-shadow 0.12s',
+          }}
+          onFocusCapture={e => {
+            e.currentTarget.style.borderColor = '#0D9488'
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(13,148,136,0.15)'
+          }}
+          onBlurCapture={e => {
+            e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : '#99F6E4'
+            e.currentTarget.style.boxShadow = 'none'
           }}
         />
         {query && (
-          <button onClick={() => { setQuery(''); setResultados([]) }}
-            style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#7A7A95', fontSize: 16 }}>
+          <button
+            onClick={() => { setQuery(''); setResultados([]) }}
+            style={{
+              position: 'absolute', right: 10, background: 'none', border: 'none',
+              cursor: 'pointer', color: t.textMuted, fontSize: 18, padding: 4,
+              lineHeight: 1,
+            }}
+            aria-label="Limpiar"
+          >
             ×
           </button>
         )}
       </div>
 
-      {/* Resultados */}
-      {open && (query.length > 0) && (
+      {open && query.length > 0 && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setOpen(false)} />
           <div style={{
             position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 100,
-            background: '#17171C', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 12, overflow: 'hidden',
-            boxShadow: '0 12px 48px rgba(0,0,0,0.5)',
+            background: t.card,
+            border: `1px solid ${t.borderCard}`,
+            borderRadius: 12,
+            overflow: 'hidden',
+            boxShadow: isDark ? '0 12px 48px rgba(0,0,0,0.5)' : '0 12px 32px rgba(4,47,46,0.12)',
           }}>
             {loading && (
-              <p style={{ padding: '14px 16px', margin: 0, color: '#7A7A95', fontSize: 13 }}>Buscando...</p>
+              <p style={{ padding: '14px 16px', margin: 0, color: t.textMuted, fontSize: 13 }}>Buscando…</p>
             )}
 
             {!loading && resultados.length === 0 && (
-              <p style={{ padding: '20px 16px', margin: 0, color: '#7A7A95', fontSize: 13, textAlign: 'center' }}>
-                Sin resultados para "{query}"
+              <p style={{ padding: '20px 16px', margin: 0, color: t.textMuted, fontSize: 13, textAlign: 'center' }}>
+                Sin resultados para &quot;{query}&quot;
               </p>
             )}
 
             {!loading && resultados.length > 0 && resultados.map((r, i) => (
-              <button key={r.id + i} onClick={r.accion}
+              <button
+                key={r.id + i}
+                onClick={r.accion}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 16px', background: 'none', border: 'none',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  borderBottom: `1px solid ${t.borderCard}`,
                   cursor: 'pointer', textAlign: 'left',
+                  transition: 'background 0.1s',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.04)' : '#F0FDFA'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
                 <div style={{
                   width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                  background: colores[r.tipo] ?? 'rgba(255,255,255,0.08)',
+                  background: badgeBg[r.tipo] ?? (isDark ? 'rgba(255,255,255,0.08)' : '#F0FDFA'),
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
                 }}>
                   {r.icono}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#F0EFF8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titulo}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#7A7A95' }}>{r.subtitulo}</p>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.titulo}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: t.textMuted }}>{r.subtitulo}</p>
                 </div>
-                <span style={{ fontSize: 11, color: '#7A7A95', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>
+                <span style={{
+                  fontSize: 11, color: t.textMuted,
+                  background: isDark ? 'rgba(255,255,255,0.06)' : '#F0FDFA',
+                  padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+                }}>
                   {r.tipo}
                 </span>
               </button>
             ))}
 
-            <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <p style={{ margin: 0, fontSize: 11, color: '#4A4A62' }}>
+            <div style={{ padding: '8px 16px', borderTop: `1px solid ${t.borderCard}`, background: isDark ? 'transparent' : '#F0FDFA' }}>
+              <p style={{ margin: 0, fontSize: 11, color: t.textMuted }}>
                 ↵ para ir · Esc para cerrar · Ctrl+K para abrir
               </p>
             </div>
