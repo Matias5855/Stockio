@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getOrgId } from '@/lib/supabase/client'
 
 export type Archivo = {
   id: string
@@ -50,17 +50,31 @@ export function useArchivos() {
   useEffect(() => { fetchArchivos() }, [fetchArchivos])
 
   const uploadArchivo = async (file: File, categoria = 'Sin categoría') => {
+    // RLS exige org_id en cada insert — si no lo mandamos, la policy rechaza
+    const orgId = await getOrgId()
+    if (!orgId) throw new Error('No se encontró tu organización. Volvé a iniciar sesión.')
+
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     const tipo = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? 'img' : ext === 'pdf' ? 'pdf' : 'xls'
-    const path = `${Date.now()}_${file.name.replace(/\s/g, '_')}`
+    // Path con org_id como prefijo para que cada org tenga su carpeta en storage
+    const path = `${orgId}/${Date.now()}_${file.name.replace(/\s/g, '_')}`
 
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file)
     if (upErr) throw new Error(upErr.message)
 
     const { error: dbErr } = await supabase.from('archivos').insert({
-      nombre: file.name, storage_path: path, tipo, size_bytes: file.size, categoria,
+      org_id: orgId,
+      nombre: file.name,
+      storage_path: path,
+      tipo,
+      size_bytes: file.size,
+      categoria,
     })
-    if (dbErr) throw new Error(dbErr.message)
+    if (dbErr) {
+      // Si el insert falla, limpiamos el archivo del storage para no dejar basura
+      await supabase.storage.from(BUCKET).remove([path]).catch(() => {})
+      throw new Error(dbErr.message)
+    }
 
     await fetchArchivos()
   }
