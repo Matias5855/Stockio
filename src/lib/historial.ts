@@ -45,14 +45,14 @@ export async function logHistorial(input: LogInput): Promise<void> {
     if (!navigator.onLine) return // offline: no acumulamos para el MVP
 
     const supabase = createClient()
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     // Obtener nombre del usuario una sola vez (cacheo en localStorage)
-    let userName = localStorage.getItem('sf_user_name') ?? null
+    let userName = localStorage.getItem('stk_user_name') ?? null
     if (!userName) {
       const { data: profile } = await supabase
         .from('profiles')
@@ -60,7 +60,7 @@ export async function logHistorial(input: LogInput): Promise<void> {
         .eq('id', user.id)
         .single()
       userName = profile?.full_name ?? user.email ?? 'Usuario'
-      if (userName) localStorage.setItem('sf_user_name', userName)
+      if (userName) localStorage.setItem('stk_user_name', userName)
     }
 
     await supabase.from('historial').insert({

@@ -16,7 +16,7 @@ export default function FinanzasPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -59,8 +59,8 @@ export default function FinanzasPage() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <ExportarBtn
-            onExcelClick={() => exportarFinanzasExcel(filtered, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
-            onPDFClick={() => exportarFinanzasPDF(filtered, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
+            onExcelClick={() => exportarFinanzasExcel(filtered, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
+            onPDFClick={() => exportarFinanzasPDF(filtered, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
           />
           <button onClick={() => setModal(true)} style={{
             background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,

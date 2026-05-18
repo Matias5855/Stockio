@@ -46,7 +46,7 @@ export function useVentas() {
   // Recuperar ventas offline pendientes del localStorage (backup adicional al IndexedDB)
   useEffect(() => {
     try {
-      const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
+      const pending = JSON.parse(localStorage.getItem('stk_venta_items') || '[]')
       if (pending.length > 0) {
         setVentas(prev => {
           const ids = new Set(prev.map(v => v.id))
@@ -100,9 +100,9 @@ export function useVentas() {
     } else {
       await saveLocal('ventas', { ...nuevaVenta, venta_items: items }, 'insert')
       try {
-        const pending = JSON.parse(localStorage.getItem('sf_venta_items') || '[]')
+        const pending = JSON.parse(localStorage.getItem('stk_venta_items') || '[]')
         pending.push({ ...nuevaVenta, venta_items: items })
-        localStorage.setItem('sf_venta_items', JSON.stringify(pending))
+        localStorage.setItem('stk_venta_items', JSON.stringify(pending))
       } catch {}
     }
 

@@ -31,7 +31,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(async () => {
     try {
       // Intentar desde cache primero
-      const cachedOrgId = localStorage.getItem('sf_org_id')
+      const cachedOrgId = localStorage.getItem('stk_org_id')
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setState(s => ({ ...s, loading: false })); return }
@@ -44,7 +44,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!profile) { setState(s => ({ ...s, loading: false })); return }
 
       const orgId = profile.org_id
-      localStorage.setItem('sf_org_id', orgId)
+      localStorage.setItem('stk_org_id', orgId)
 
       const { data: org } = await supabase
         .from('organizations')

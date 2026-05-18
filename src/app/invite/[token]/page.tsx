@@ -127,7 +127,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   }
 
   // ── Form de aceptación ───────────────────────────────────
-  const orgName = inv.organizations?.name ?? 'StockFlow'
+  const orgName = inv.organizations?.name ?? 'Stockio'
   return (
     <div style={layoutBg}>
       <div style={card}>
@@ -172,7 +172,7 @@ function Brand() {
         borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontWeight: 800, fontSize: 18,
       }}>S</div>
-      <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 20 }}>StockFlow</span>
+      <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 20 }}>Stockio</span>
     </div>
   )
 }

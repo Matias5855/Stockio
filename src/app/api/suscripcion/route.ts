@@ -16,22 +16,22 @@ const MP_BASE = 'https://api.mercadopago.com'
 function buildPlanesConfig(appUrl: string) {
   return {
     pro: {
-      reason: 'StockFlow Normal',
+      reason: 'Stockio Normal',
       auto_recurring: {
         frequency: 1,
         frequency_type: 'months',
-        transaction_amount: 9990,
+        transaction_amount: 14990,
         currency_id: 'ARS',
         free_trial: { frequency: 1, frequency_type: 'months' },
       },
       back_url: `${appUrl}/dashboard?suscripcion=ok`,
     },
     business: {
-      reason: 'StockFlow Premium',
+      reason: 'Stockio Premium',
       auto_recurring: {
         frequency: 1,
         frequency_type: 'months',
-        transaction_amount: 19990,
+        transaction_amount: 24990,
         currency_id: 'ARS',
         free_trial: { frequency: 1, frequency_type: 'months' },
       },

@@ -108,7 +108,7 @@ class SyncManager {
   private async pullFromSupabase(opts?: { force?: boolean }) {
     try {
       const db = await getLocalDB()
-      const orgId = localStorage.getItem('sf_org_id')
+      const orgId = localStorage.getItem('stk_org_id')
       if (!orgId) return
 
       // Full pull cada 24h para limpiar fantasmas (registros borrados en servidor)
@@ -150,7 +150,7 @@ class SyncManager {
     const pending = await getPendingSync() as PendingItem[]
     if (!pending.length) return
 
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return
 
     // Ventas necesitan correlativo de nro_factura → serie. Resto → paralelo.

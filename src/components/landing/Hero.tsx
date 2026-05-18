@@ -112,7 +112,7 @@ export default function Hero() {
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#DC2626' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#D97706' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#16A34A' }} />
-            <span style={{ color: '#5EEAD4', fontSize: 12, marginLeft: 12 }}>StockFlow · Dashboard</span>
+            <span style={{ color: '#5EEAD4', fontSize: 12, marginLeft: 12 }}>Stockio · Dashboard</span>
           </div>
 
           {/* Cuerpo simulado: 4 cards */}

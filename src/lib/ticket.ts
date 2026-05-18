@@ -372,7 +372,7 @@ export function generarTicketPDF(data: TicketData): Blob {
   doc.setFont('helvetica', 'italic')
   doc.setTextColor(...GRIS_TEXTO)
   doc.text(
-    `Generado por StockFlow · ${formatFechaHora(new Date().toISOString())}`,
+    `Generado por Stockio · ${formatFechaHora(new Date().toISOString())}`,
     W / 2,
     H - 3,
     { align: 'center' }

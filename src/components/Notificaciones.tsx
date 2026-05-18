@@ -20,7 +20,7 @@ export default function Notificaciones() {
 
   // Sincronizar con el toggle del layout
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const onStorage = () => sync()
     window.addEventListener('storage', onStorage)
@@ -36,7 +36,7 @@ export default function Notificaciones() {
   }, [])
 
   const generarNotifs = async () => {
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return
 
     const nuevas: Notif[] = []

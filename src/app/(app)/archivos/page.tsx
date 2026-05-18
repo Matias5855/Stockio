@@ -9,7 +9,7 @@ export default function ArchivosPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)

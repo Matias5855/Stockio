@@ -42,9 +42,9 @@ export default function DashboardPage() {
   // Leer tema persistido (sincronizado con el toggle del layout)
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     // Reaccionar a cambios del toggle desde el sidebar
-    const handler = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const handler = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
   }, [])

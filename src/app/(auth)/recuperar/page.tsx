@@ -32,7 +32,7 @@ export default function RecuperarPage() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0F0F12', padding: 20 }}>
       <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 40, width: '100%', maxWidth: 380 }}>
-        <h1 style={{ color: '#7C6FE0', fontWeight: 800, fontSize: 24, margin: '0 0 4px' }}>StockFlow</h1>
+        <h1 style={{ color: '#7C6FE0', fontWeight: 800, fontSize: 24, margin: '0 0 4px' }}>Stockio</h1>
         <p style={{ color: '#7A7A95', margin: '0 0 28px', fontSize: 14 }}>Recuperar contraseña</p>
 
         {sent ? (

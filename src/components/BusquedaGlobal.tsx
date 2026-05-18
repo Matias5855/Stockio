@@ -28,7 +28,7 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
 
   // Sincronizar con el toggle dark/light del layout
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const onStorage = () => sync()
     window.addEventListener('storage', onStorage)
@@ -65,7 +65,7 @@ export default function BusquedaGlobal({ onNavegar }: Props) {
 
   const buscar = async (q: string) => {
     setLoading(true)
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) { setLoading(false); return }
 
     const term = `%${q}%`

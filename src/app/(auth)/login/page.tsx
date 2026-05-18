@@ -57,7 +57,7 @@ export default function LoginPage() {
             borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontWeight: 800, fontSize: 18,
           }}>S</div>
-          <span style={{ color: '#FFFFFF', fontWeight: 800, fontSize: 20 }}>StockFlow</span>
+          <span style={{ color: '#FFFFFF', fontWeight: 800, fontSize: 20 }}>Stockio</span>
         </Link>
 
         <div>
@@ -82,7 +82,7 @@ export default function LoginPage() {
         </div>
 
         <p style={{ fontSize: 12, color: '#5EEAD4', margin: 0 }}>
-          © {new Date().getFullYear()} StockFlow · Hecho en Chaco, Argentina
+          © {new Date().getFullYear()} Stockio · Hecho en Chaco, Argentina
         </p>
       </div>
 
@@ -99,7 +99,7 @@ export default function LoginPage() {
             Iniciar sesión
           </h1>
           <p style={{ color: '#6B7280', margin: '0 0 32px', fontSize: 14 }}>
-            Ingresá a tu cuenta de StockFlow
+            Ingresá a tu cuenta de Stockio
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

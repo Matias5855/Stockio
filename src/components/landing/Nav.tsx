@@ -47,7 +47,7 @@ export default function Nav() {
             fontWeight: 800,
             fontSize: 16,
           }}>S</div>
-          <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 18 }}>StockFlow</span>
+          <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 18 }}>Stockio</span>
         </Link>
 
         {/* Links desktop */}

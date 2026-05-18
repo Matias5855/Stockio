@@ -1,5 +1,5 @@
 /**
- * Paleta StockFlow — base teal con acentos azul/verde.
+ * Paleta Stockio — base teal con acentos azul/verde.
  *
  * Uso:
  *   import { COLORS, getTheme } from '@/lib/theme'

@@ -9,7 +9,7 @@ const PREGUNTAS = [
   },
   {
     q: '¿Qué planes hay y cuánto cuestan?',
-    a: 'StockFlow Normal cuesta $9.990/mes (1 usuario). StockFlow Premium cuesta $19.990/mes y suma usuarios ilimitados con roles y permisos para equipos.',
+    a: 'Stockio Normal cuesta $14.990/mes (1 usuario). Stockio Premium cuesta $24.990/mes y suma usuarios ilimitados con roles y permisos para equipos.',
   },
   {
     q: '¿Funciona en celular?',

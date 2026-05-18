@@ -13,7 +13,7 @@ export type Archivo = {
   url?: string
 }
 
-const BUCKET = 'stockflow-archivos'
+const BUCKET = 'stockio-archivos'
 
 export function useArchivos() {
   const supabase = useMemo(() => createClient(), [])

@@ -34,7 +34,7 @@ export default function Beneficios() {
             letterSpacing: '0.1em',
             margin: 0,
           }}>
-            Por qué StockFlow
+            Por qué Stockio
           </p>
           <h2 style={{
             color: '#042F2E',

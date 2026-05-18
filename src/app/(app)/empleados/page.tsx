@@ -65,7 +65,7 @@ export default function EmpleadosPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -73,7 +73,7 @@ export default function EmpleadosPage() {
   const t = useMemo(() => getTheme(isDark), [isDark])
 
   const fetchData = useCallback(async () => {
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) { setLoading(false); return }
     setLoading(true)
     const { data: sus } = await supabase
@@ -100,7 +100,7 @@ export default function EmpleadosPage() {
 
   const invitar = async () => {
     if (!form.email) return
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     const { data, error } = await supabase.from('invitaciones').insert({
       org_id: orgId,
       email: form.email,
@@ -115,7 +115,7 @@ export default function EmpleadosPage() {
         email: form.email,
         token: (data as { token: string }).token,
         role: form.role,
-        org_name: localStorage.getItem('sf_org_nombre') ?? 'Tu negocio',
+        org_name: localStorage.getItem('stk_org_nombre') ?? 'Tu negocio',
       }),
     })
 
@@ -430,7 +430,7 @@ function PaywallPremium({ textoTema }: { textoTema: ReturnType<typeof getTheme> 
           Función exclusiva del plan Premium
         </p>
         <p style={{ color: t.textMuted, fontSize: 14, marginBottom: 24, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-          Con StockFlow Premium podés agregar empleados ilimitados, asignarles roles y que todos vean el mismo stock en tiempo real.
+          Con Stockio Premium podés agregar empleados ilimitados, asignarles roles y que todos vean el mismo stock en tiempo real.
         </p>
         <button
           onClick={() => setPage('configuracion')}

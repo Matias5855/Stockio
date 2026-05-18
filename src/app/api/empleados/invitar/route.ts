@@ -33,18 +33,18 @@ export async function POST(req: NextRequest) {
     const roleDescSafe = escapeHtml(ROLES_DESC[role] ?? '')
 
     await resend.emails.send({
-      from: 'StockFlow <onboarding@resend.dev>',
+      from: 'Stockio <onboarding@resend.dev>',
       to: email,
-      subject: `Te invitaron a usar StockFlow en ${orgNameSafe}`,
+      subject: `Te invitaron a usar Stockio en ${orgNameSafe}`,
       html: `
         <div style="max-width:520px;margin:40px auto;font-family:sans-serif;">
           <div style="background:#7C6FE0;padding:28px 32px;border-radius:12px 12px 0 0;">
-            <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">StockFlow</h1>
+            <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Stockio</h1>
           </div>
           <div style="background:#fff;padding:32px;border:1px solid #eee;border-top:none;border-radius:0 0 12px 12px;">
             <h2 style="color:#18181C;margin:0 0 12px;font-size:20px;">¡Te invitaron a unirte!</h2>
             <p style="color:#555;font-size:15px;line-height:1.6;">
-              <strong>${orgNameSafe}</strong> te invitó a usar StockFlow como <strong>${roleSafe}</strong>.
+              <strong>${orgNameSafe}</strong> te invitó a usar Stockio como <strong>${roleSafe}</strong>.
             </p>
             <div style="background:#F5F4FF;border-radius:10px;padding:16px;margin:20px 0;">
               <p style="margin:0;font-size:13px;color:#5B4FD0;font-weight:600;">Tu rol: ${roleCapSafe}</p>

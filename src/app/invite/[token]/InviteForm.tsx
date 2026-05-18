@@ -34,8 +34,8 @@ export default function InviteForm({ token, email }: { token: string; email: str
 
       // Login automatico
       await supabase.auth.signInWithPassword({ email, password })
-      if (data.org_id) localStorage.setItem('sf_org_id', data.org_id)
-      if (data.org_name) localStorage.setItem('sf_org_nombre', data.org_name)
+      if (data.org_id) localStorage.setItem('stk_org_id', data.org_id)
+      if (data.org_name) localStorage.setItem('stk_org_nombre', data.org_name)
 
       router.push('/dashboard')
       router.refresh()
@@ -119,7 +119,7 @@ export default function InviteForm({ token, email }: { token: string; email: str
       </button>
 
       <p style={{ color: '#6B7280', fontSize: 12, textAlign: 'center', margin: 0 }}>
-        Al continuar, aceptás las condiciones de uso de StockFlow.
+        Al continuar, aceptás las condiciones de uso de Stockio.
       </p>
     </div>
   )

@@ -1,7 +1,7 @@
 /**
  * Exportacion de reportes a Excel (.xlsx) y PDF.
  *
- * Usa la paleta teal de StockFlow. Los PDFs son reportes resumidos
+ * Usa la paleta teal de Stockio. Los PDFs son reportes resumidos
  * de gestion (NO facturas — eso lo hace ticket.ts).
  */
 import * as XLSX from 'xlsx'
@@ -145,7 +145,7 @@ function headerPDF(doc: jsPDF, titulo: string, negocio: string) {
   doc.setTextColor(...BLANCO)
   doc.setFontSize(18)
   doc.setFont('helvetica', 'bold')
-  doc.text('StockFlow', 15, 13)
+  doc.text('Stockio', 15, 13)
 
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
@@ -171,7 +171,7 @@ function footerPDF(doc: jsPDF) {
   doc.setTextColor(94, 234, 212)
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text('Generado por StockFlow — Gestión PyME', W / 2, H - 4, { align: 'center' })
+  doc.text('Generado por Stockio — Gestión PyME', W / 2, H - 4, { align: 'center' })
 }
 
 export function exportarStockPDF(productos: ProductoExport[], negocio: string) {

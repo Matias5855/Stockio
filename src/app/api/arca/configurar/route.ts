@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     if (!isEncryptionConfigured()) {
       return NextResponse.json({
-        error: 'El servidor no tiene configurada la encriptacion (STOCKFLOW_ENCRYPTION_KEY). Contactar al administrador.',
+        error: 'El servidor no tiene configurada la encriptacion (STOCKIO_ENCRYPTION_KEY). Contactar al administrador.',
       }, { status: 503 })
     }
 

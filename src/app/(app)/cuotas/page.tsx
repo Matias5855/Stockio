@@ -47,7 +47,7 @@ export default function CuotasPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -82,7 +82,7 @@ export default function CuotasPage() {
 
   const save = async () => {
     if (!form.cliente_nombre || !form.monto_total) return
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return alert('Error: no se encontró la organización')
 
     // 1. Insertar el plan de cuotas (necesito el id para vincular la venta)
@@ -124,7 +124,7 @@ export default function CuotasPage() {
   }
 
   const registrarPago = async (cuotaPagoId: string, cuotaVentaId: string, monto: number) => {
-    const orgId = localStorage.getItem('sf_org_id')
+    const orgId = localStorage.getItem('stk_org_id')
     await supabase.from('cuota_pagos').update({
       estado: 'pagada',
       fecha_pago: new Date().toISOString().split('T')[0],

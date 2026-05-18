@@ -64,7 +64,7 @@ export async function requireOrgMember(): Promise<OrgAuthContext> {
 
 /**
  * Garantiza que el usuario pertenezca a una org Y tenga uno de los roles permitidos.
- * Roles validos en StockFlow: 'owner' | 'admin' | 'vendedor' | 'repositor'
+ * Roles validos en Stockio: 'owner' | 'admin' | 'vendedor' | 'repositor'
  */
 export async function requireRole(allowed: readonly string[]): Promise<OrgAuthContext> {
   const ctx = await requireOrgMember()

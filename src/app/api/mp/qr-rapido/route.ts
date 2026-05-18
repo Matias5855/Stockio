@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
       .select('mp_access_token, mp_connected, name')
       .eq('id', profile.org_id).single()
 
-    // Exigimos la cuenta MP de la PyME — no usamos la de StockFlow como fallback,
-    // porque entonces el cobro le llegaria al dueno de StockFlow, no al cliente.
+    // Exigimos la cuenta MP de la PyME — no usamos la de Stockio como fallback,
+    // porque entonces el cobro le llegaria al dueno de Stockio, no al cliente.
     if (!org?.mp_connected || !org?.mp_access_token) {
       return NextResponse.json({
         error: 'Mercado Pago no conectado. Entrá a Configuración → Mercado Pago para conectar tu cuenta y empezar a cobrar.',

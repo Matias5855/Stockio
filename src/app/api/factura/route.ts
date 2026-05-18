@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
               <p style="color: #333;">Hola <strong>${clienteSafe}</strong>,</p>
               <p style="color: #555;">Adjuntamos el comprobante de tu compra por <strong>$${totalSafe}</strong>.</p>
               ${caeSafe ? `<p style="color: #555; font-size: 12px;">CAE: ${caeSafe} | Vto: ${caeVtoSafe}</p>` : ''}
-              <p style="color: #999; font-size: 11px; margin-top: 24px;">Generado por StockFlow</p>
+              <p style="color: #999; font-size: 11px; margin-top: 24px;">Generado por Stockio</p>
             </div>
           </div>
         `,

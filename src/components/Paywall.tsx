@@ -21,8 +21,8 @@ interface Props {
 }
 
 const PLAN_INFO = {
-  normal:   { nombre: 'StockFlow Normal',  precio: 9990 },
-  premium:  { nombre: 'StockFlow Premium', precio: 19990 },
+  normal:   { nombre: 'Stockio Normal',  precio: 14990 },
+  premium:  { nombre: 'Stockio Premium', precio: 24990 },
 } as const
 
 export default function Paywall({ estado, planId, email }: Props) {
@@ -39,10 +39,10 @@ export default function Paywall({ estado, planId, email }: Props) {
 
   const mensaje =
     estado === 'cancelada'
-      ? 'Cancelaste tu suscripción a StockFlow. Para volver a usar la app, reactivá tu plan.'
+      ? 'Cancelaste tu suscripción a Stockio. Para volver a usar la app, reactivá tu plan.'
       : estado === 'pausada'
-      ? 'Tu suscripción está pausada. Reactivá el pago automático para volver a usar StockFlow.'
-      : 'Tu período de prueba terminó o el cobro automático falló. Para seguir usando StockFlow, regularizá el pago.'
+      ? 'Tu suscripción está pausada. Reactivá el pago automático para volver a usar Stockio.'
+      : 'Tu período de prueba terminó o el cobro automático falló. Para seguir usando Stockio, regularizá el pago.'
 
   const pagar = async () => {
     setLoading(true)

@@ -1,4 +1,4 @@
-// Landing publica de StockFlow.
+// Landing publica de Stockio.
 // Si el user ya tiene sesion, lo redirigimos al dashboard.
 // Si no, mostramos la landing.
 

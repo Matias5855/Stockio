@@ -4,7 +4,7 @@
  * Uso: certificados y claves privadas de AFIP/ARCA por organizacion.
  * NO usar para hashes de password (eso lo hace Supabase Auth).
  *
- * Requiere env var STOCKFLOW_ENCRYPTION_KEY:
+ * Requiere env var STOCKIO_ENCRYPTION_KEY:
  *   - 32 bytes (256 bits) en formato base64
  *   - Generar con: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
  *
@@ -15,16 +15,16 @@ import crypto from 'node:crypto'
 const ALGO = 'aes-256-gcm'
 
 function getKey(): Buffer {
-  const raw = process.env.STOCKFLOW_ENCRYPTION_KEY
+  const raw = process.env.STOCKIO_ENCRYPTION_KEY
   if (!raw) {
     throw new Error(
-      'STOCKFLOW_ENCRYPTION_KEY no esta configurada. Generala con: ' +
+      'STOCKIO_ENCRYPTION_KEY no esta configurada. Generala con: ' +
       'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"'
     )
   }
   const key = Buffer.from(raw, 'base64')
   if (key.length !== 32) {
-    throw new Error('STOCKFLOW_ENCRYPTION_KEY debe ser 32 bytes (256 bits) en base64')
+    throw new Error('STOCKIO_ENCRYPTION_KEY debe ser 32 bytes (256 bits) en base64')
   }
   return key
 }

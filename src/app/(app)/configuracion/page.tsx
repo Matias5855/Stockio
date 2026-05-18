@@ -34,7 +34,7 @@ export default function ConfiguracionPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -203,7 +203,7 @@ export default function ConfiguracionPage() {
                   ✓ Conectado — ya podés cobrar a tus clientes
                 </p>
                 <p style={{ margin: 0, fontSize: 12, color: COLORS.badge.ok.text, lineHeight: 1.5 }}>
-                  Los pagos por link, QR y cuotas online van directo a tu cuenta de Mercado Pago. StockFlow no toca ese dinero.
+                  Los pagos por link, QR y cuotas online van directo a tu cuenta de Mercado Pago. Stockio no toca ese dinero.
                 </p>
                 {org?.mp_user_id && (
                   <p style={{ margin: '6px 0 0', fontSize: 11, color: t.textMuted }}>ID MP: {org.mp_user_id}</p>
@@ -230,7 +230,7 @@ export default function ConfiguracionPage() {
                 <p style={{ margin: 0, fontSize: 13, color: COLORS.badge.bajo.text, lineHeight: 1.55 }}>
                   Para que tus clientes puedan pagarte por <strong>link de pago, QR o cuotas online</strong>,
                   necesitás conectar tu cuenta de Mercado Pago. El dinero va directo a vos,
-                  StockFlow no toca ese dinero.
+                  Stockio no toca ese dinero.
                 </p>
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: COLORS.badge.bajo.text }}>
                   Es gratis y tarda 30 segundos.
@@ -338,7 +338,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
             Facturación Electrónica (ARCA / AFIP)
           </p>
           <p style={{ margin: 0, fontSize: 13, color: t.textMuted, maxWidth: 520, lineHeight: 1.5 }}>
-            Conectá tus credenciales fiscales para que StockFlow pida el CAE automáticamente a ARCA y emita Facturas C oficiales con validez legal.
+            Conectá tus credenciales fiscales para que Stockio pida el CAE automáticamente a ARCA y emita Facturas C oficiales con validez legal.
           </p>
         </div>
         {status && (
@@ -369,7 +369,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
         }}>
           <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700 }}>⚠ Encriptación no configurada en el servidor</p>
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
-            Falta la variable de entorno <code>STOCKFLOW_ENCRYPTION_KEY</code>. Sin esto no podemos guardar
+            Falta la variable de entorno <code>STOCKIO_ENCRYPTION_KEY</code>. Sin esto no podemos guardar
             las credenciales de forma segura. Contactá al administrador del sistema.
           </p>
         </div>
@@ -414,7 +414,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
                 <li>En <strong>“Nuevo Certificado Digital”</strong>, generá un certificado con alias <code>stockflow</code>.</li>
                 <li>Vinculá el certificado al servicio <strong>“Facturación Electrónica” (wsfe)</strong>.</li>
                 <li>Descargá el archivo <strong>.crt</strong> (certificado) y guardá tu <strong>.key</strong> (clave privada).</li>
-                <li>Pegá ambos abajo. StockFlow los guarda <strong>encriptados</strong> en la base de datos.</li>
+                <li>Pegá ambos abajo. Stockio los guarda <strong>encriptados</strong> en la base de datos.</li>
               </ol>
               <p style={{ margin: '8px 0 0', color: t.textMuted }}>
                 Si nunca lo hiciste, podés empezar con <strong>ambiente Testing</strong> para probar sin emitir facturas reales.
@@ -443,7 +443,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
               Configurar AFIP / ARCA
             </p>
             <p style={{ margin: '0 0 20px', fontSize: 13, color: t.textMuted }}>
-              Los datos se guardan encriptados con AES-256-GCM. Nadie en StockFlow puede ver tu clave privada.
+              Los datos se guardan encriptados con AES-256-GCM. Nadie en Stockio puede ver tu clave privada.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>

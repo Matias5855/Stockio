@@ -29,7 +29,7 @@ export default function Footer() {
               fontWeight: 800,
               fontSize: 16,
             }}>S</div>
-            <span style={{ color: '#FFFFFF', fontWeight: 800, fontSize: 18 }}>StockFlow</span>
+            <span style={{ color: '#FFFFFF', fontWeight: 800, fontSize: 18 }}>Stockio</span>
           </div>
           <p style={{ fontSize: 13, lineHeight: 1.55, margin: 0, color: '#5EEAD4' }}>
             Gestión inteligente para PyMEs argentinas.
@@ -61,11 +61,23 @@ export default function Footer() {
           <h4 style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
             Contacto
           </h4>
-          <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0, color: '#5EEAD4' }}>
-            Resistencia, Chaco<br />
-            WhatsApp: +54 9 ...<br />
-            soporte@stockflow.com.ar
+          <p style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 8px', color: '#5EEAD4' }}>
+            Resistencia, Chaco 🇦🇷
           </p>
+          <a
+            href="mailto:soporte@stockio.com.ar"
+            style={{
+              fontSize: 13,
+              color: '#FFFFFF',
+              textDecoration: 'none',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            ✉ soporte@stockio.com.ar
+          </a>
         </div>
       </div>
 
@@ -77,7 +89,7 @@ export default function Footer() {
         fontSize: 12,
         color: '#5EEAD4',
       }}>
-        © {new Date().getFullYear()} StockFlow. Todos los derechos reservados.
+        © {new Date().getFullYear()} Stockio. Todos los derechos reservados.
       </div>
     </footer>
   )

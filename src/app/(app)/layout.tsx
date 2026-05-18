@@ -89,10 +89,10 @@ export default function AppLayout() {
   useEffect(() => {
     syncManager.init()
     setIsOffline(!navigator.onLine)
-    setOrgNombre(localStorage.getItem('sf_org_nombre') ?? 'Gestión PyME')
+    setOrgNombre(localStorage.getItem('stk_org_nombre') ?? 'Gestión PyME')
 
     // Leer preferencia de tema persistida
-    const savedDark = localStorage.getItem('sf_dark_mode')
+    const savedDark = localStorage.getItem('stk_dark_mode')
     if (savedDark === '1') setIsDark(true)
 
     // Verificar estado de suscripcion al cargar
@@ -132,7 +132,7 @@ export default function AppLayout() {
   const toggleDark = useCallback(() => {
     setIsDark(v => {
       const next = !v
-      try { localStorage.setItem('sf_dark_mode', next ? '1' : '0') } catch {}
+      try { localStorage.setItem('stk_dark_mode', next ? '1' : '0') } catch {}
       return next
     })
   }, [])
@@ -240,7 +240,7 @@ export default function AppLayout() {
                     color: '#FFFFFF', fontWeight: 800, fontSize: 16,
                   }}>S</div>
                   <div>
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#FFFFFF' }}>StockFlow</p>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#FFFFFF' }}>Stockio</p>
                     <p style={{ margin: '1px 0 0', fontSize: 11, color: t.textOnSidebar }}>{orgNombre}</p>
                   </div>
                 </div>

@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Cuota no encontrada' }, { status: 404 })
     }
 
-    // El cobro tiene que ir a la cuenta MP de la PyME, no a la de StockFlow.
+    // El cobro tiene que ir a la cuenta MP de la PyME, no a la de Stockio.
     // Si no esta conectada, bloqueamos con un mensaje claro.
     const { data: org } = await supabase
       .from('organizations')

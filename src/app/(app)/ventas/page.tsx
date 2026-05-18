@@ -48,7 +48,7 @@ export default function VentasPage() {
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -148,7 +148,7 @@ export default function VentasPage() {
 
   const descargarPDF = async (v: VentaRow) => {
     const supabase = createClient()
-    const orgID = localStorage.getItem('sf_org_id')
+    const orgID = localStorage.getItem('stk_org_id')
 
     const { data: org } = await supabase
       .from('organizations')
@@ -293,8 +293,8 @@ export default function VentasPage() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <ExportarBtn
-            onExcelClick={() => exportarVentasExcel(ventas, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
-            onPDFClick={() => exportarVentasPDF(ventas, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
+            onExcelClick={() => exportarVentasExcel(ventas, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
+            onPDFClick={() => exportarVentasPDF(ventas, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
           />
           <button onClick={() => setScanner(true)} style={{
             background: '#CCFBF1', color: COLORS.primary,

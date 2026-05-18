@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     })
 
     // 5. Email de bienvenida con Resend
-    const planNombre = plan === 'premium' ? 'StockFlow Premium' : 'StockFlow Normal'
+    const planNombre = plan === 'premium' ? 'Stockio Premium' : 'Stockio Normal'
     const trialFinStr = trialFin.toLocaleDateString('es-AR')
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
@@ -77,9 +77,9 @@ export async function POST(req: NextRequest) {
 
     try {
       await resend.emails.send({
-        from: 'StockFlow <onboarding@resend.dev>',
+        from: 'Stockio <onboarding@resend.dev>',
         to: email,
-        subject: `¡Bienvenido a StockFlow, ${primerNombreSafe}! 🎉`,
+        subject: `¡Bienvenido a Stockio, ${primerNombreSafe}! 🎉`,
         html: `
 <!DOCTYPE html>
 <html lang="es">
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     
     <!-- Header -->
     <div style="background:#7C6FE0;padding:32px 40px;">
-      <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:800;letter-spacing:-0.02em;">StockFlow</h1>
+      <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:800;letter-spacing:-0.02em;">Stockio</h1>
       <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:14px;">Gestión inteligente para tu negocio</p>
     </div>
 
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
       </div>
 
       <!-- Lo que podés hacer -->
-      <p style="color:#18181C;font-weight:700;font-size:15px;margin:0 0 14px;">¿Qué podés hacer con StockFlow?</p>
+      <p style="color:#18181C;font-weight:700;font-size:15px;margin:0 0 14px;">¿Qué podés hacer con Stockio?</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${[
           ['📦', 'Controlá tu inventario con alertas de stock bajo'],
@@ -135,14 +135,14 @@ export async function POST(req: NextRequest) {
 
       <p style="color:#9898B0;font-size:13px;text-align:center;margin:0;line-height:1.6;">
         ¿Tenés dudas? Respondé este email y te ayudamos.<br>
-        <strong style="color:#7C6FE0;">Equipo StockFlow</strong>
+        <strong style="color:#7C6FE0;">Equipo Stockio</strong>
       </p>
     </div>
 
     <!-- Footer -->
     <div style="background:#F5F5F7;padding:20px 40px;text-align:center;border-top:1px solid #EBEBEF;">
       <p style="margin:0;font-size:12px;color:#9898B0;">
-        © 2025 StockFlow · Hecho en Chaco, Argentina 🇦🇷
+        © 2025 Stockio · Hecho en Chaco, Argentina 🇦🇷
       </p>
     </div>
   </div>

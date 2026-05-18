@@ -46,7 +46,7 @@ export default function StockPage() {
   // Tema sincronizado con el toggle del layout
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
-    const sync = () => setIsDark(localStorage.getItem('sf_dark_mode') === '1')
+    const sync = () => setIsDark(localStorage.getItem('stk_dark_mode') === '1')
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
@@ -162,8 +162,8 @@ export default function StockPage() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <ExportarBtn
-            onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
-            onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('sf_org_nombre') ?? 'Negocio')}
+            onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
+            onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
           />
           <button onClick={openNew} style={{
             background: COLORS.primary, color: '#fff', border: 'none',

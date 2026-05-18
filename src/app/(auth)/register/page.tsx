@@ -7,14 +7,14 @@ import { COLORS } from '@/lib/theme'
 
 const PLANES = {
   normal: {
-    nombre: 'StockFlow Normal',
-    precio: 9990,
+    nombre: 'Stockio Normal',
+    precio: 14990,
     descripcion: 'Para negocios que quieren ordenarse',
     features: ['1 usuario', 'Productos ilimitados', 'Ventas y facturación', 'Escáner de código de barras', 'Cuotas y créditos', 'Facturación ARCA', '10 GB archivos'],
   },
   premium: {
-    nombre: 'StockFlow Premium',
-    precio: 19990,
+    nombre: 'Stockio Premium',
+    precio: 24990,
     descripcion: 'Para negocios con empleados',
     features: ['Usuarios ilimitados', 'Stock compartido en tiempo real', 'Roles por empleado', 'Todo lo del plan Normal', 'Múltiples sucursales', '50 GB archivos', 'Soporte prioritario'],
   },
@@ -35,7 +35,7 @@ const PAGE_BG: React.CSSProperties = {
 const BRAND_HEADER = (
   <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 28 }}>
     <div style={{ width: 36, height: 36, background: COLORS.primary, color: '#FFFFFF', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18 }}>S</div>
-    <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 22 }}>StockFlow</span>
+    <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 22 }}>Stockio</span>
   </Link>
 )
 
@@ -189,7 +189,7 @@ export default function RegisterPage() {
               borderRadius: 8, padding: '6px 12px', textAlign: 'right',
             }}>
               <p style={{ margin: 0, fontSize: 10, color: '#115E59', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Plan</p>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#042F2E' }}>{planData.nombre.replace('StockFlow ', '')}</p>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#042F2E' }}>{planData.nombre.replace('Stockio ', '')}</p>
             </div>
           </div>
 
@@ -270,8 +270,8 @@ export default function RegisterPage() {
         const mpData = await mpRes.json()
 
         await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
-        localStorage.setItem('sf_org_id', data.org_id)
-        localStorage.setItem('sf_org_nombre', form.negocio)
+        localStorage.setItem('stk_org_id', data.org_id)
+        localStorage.setItem('stk_org_nombre', form.negocio)
 
         setStep('procesando')
 
@@ -315,7 +315,7 @@ export default function RegisterPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', background: '#F0FDFA', border: '1px solid #CCFBF1', borderRadius: 10 }}>
             <span style={{ fontSize: 18 }}>🔒</span>
             <p style={{ margin: 0, fontSize: 12, color: '#1C4542', lineHeight: 1.5 }}>
-              Pago seguro procesado por <strong style={{ color: COLORS.secondary }}>Mercado Pago</strong>. StockFlow nunca ve los datos de tu tarjeta.
+              Pago seguro procesado por <strong style={{ color: COLORS.secondary }}>Mercado Pago</strong>. Stockio nunca ve los datos de tu tarjeta.
             </p>
           </div>
 

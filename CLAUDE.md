@@ -1,5 +1,5 @@
 @AGENTS.md
-# StockFlow — Contexto del proyecto
+# Stockio — Contexto del proyecto
 
 ## Qué es
 SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio es una `organization`. Desarrollado para ser vendido como producto con suscripción mensual.
@@ -50,8 +50,8 @@ SaaS de gestión para PyMEs argentinas. Sistema multi-tenant donde cada negocio 
 - **Notificaciones** — campana en header (integrada en layout)
 
 ## Planes y suscripción
-- **StockFlow Normal** — $9.990 ARS/mes, 1 usuario
-- **StockFlow Premium** — $19.990 ARS/mes, usuarios ilimitados con roles
+- **Stockio Normal** — $14.990 ARS/mes, 1 usuario
+- **Stockio Premium** — $24.990 ARS/mes, usuarios ilimitados con roles
 - Trial de 30 días gratis con tarjeta obligatoria al registrarse
 - Cobro automático vía MP preapproval al día 31
 - Paywall `PaywallTrial` se muestra cuando trial vence o suscripción inactiva
@@ -132,7 +132,7 @@ https://github.com/Matias5855/stockflow
 - [ ] Emails de aviso días 23 y 28 del trial
 - [ ] Página de aceptar invitación `/invite/[token]`
 - [ ] Historial de cambios visible en UI
-- [ ] Dashboard de admin para el dueño de StockFlow
+- [ ] Dashboard de admin para el dueño de Stockio
 - [ ] Exportar Excel/PDF (código en `src/lib/exportar.ts`, falta integrar botones)
 - [ ] Unificar `sf_org_name` y `sf_org_nombre` en localStorage
 - [ ] Seguridad: verificar firma de webhook MP, sanitizar emails, rate limiting, chequeo de rol en API routes

@@ -15,16 +15,16 @@ export function createClient(): SupabaseClient {
 }
 
 /**
- * Lee sf_org_id de localStorage y valida que sea un UUID. Si no lo es
+ * Lee stk_org_id de localStorage y valida que sea un UUID. Si no lo es
  * (manipulado, corrupto), lo borra y retorna null. Asi evitamos enviar
  * basura al backend en consultas RLS o filtros .eq('org_id', ...).
  */
 function readCachedOrgId(): string | null {
   if (typeof window === 'undefined') return null
-  const raw = localStorage.getItem('sf_org_id')
+  const raw = localStorage.getItem('stk_org_id')
   if (!raw) return null
   if (!isValidUuid(raw)) {
-    localStorage.removeItem('sf_org_id')
+    localStorage.removeItem('stk_org_id')
     return null
   }
   return raw
@@ -56,7 +56,7 @@ export async function getOrgId(): Promise<string | null> {
         .from('profiles').select('org_id').eq('id', user.id).single()
 
       if (profile?.org_id) {
-        localStorage.setItem('sf_org_id', profile.org_id)
+        localStorage.setItem('stk_org_id', profile.org_id)
         orgIdCache = profile.org_id
 
         // No bloquear el retorno con la consulta del nombre de la org
@@ -66,7 +66,7 @@ export async function getOrgId(): Promise<string | null> {
           .eq('id', profile.org_id)
           .single()
           .then(({ data: org }) => {
-            if (org?.nombre) localStorage.setItem('sf_org_nombre', org.nombre)
+            if (org?.nombre) localStorage.setItem('stk_org_nombre', org.nombre)
           })
 
         return profile.org_id
