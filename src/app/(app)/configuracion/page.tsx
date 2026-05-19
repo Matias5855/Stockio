@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
@@ -259,6 +259,9 @@ export default function ConfiguracionPage() {
 
         {/* FACTURACIÓN ELECTRÓNICA */}
         <ArcaConfigSection isDark={isDark} />
+
+        {/* TU SUSCRIPCIÓN — siempre al final */}
+        <SuscripcionSection isDark={isDark} />
 
       </div>
     </div>
@@ -606,6 +609,347 @@ function QuickQR({ isDark }: { isDark: boolean }) {
             }}>
               📋 Copiar link
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── TU SUSCRIPCIÓN ────────────────────────────────────────────
+type SuscripcionInfo = {
+  estado: 'trial' | 'activa' | 'vencida' | 'cancelada' | 'pausada'
+  plan_id: 'normal' | 'premium' | 'pro' | 'business' | string
+  trial_fin: string | null
+  mp_suscripcion_id?: string | null
+}
+
+const PLAN_LABEL: Record<string, { nombre: string; precio: number }> = {
+  normal:   { nombre: 'Stockio Normal',  precio: 14990 },
+  pro:      { nombre: 'Stockio Normal',  precio: 14990 },
+  premium:  { nombre: 'Stockio Premium', precio: 24990 },
+  business: { nombre: 'Stockio Premium', precio: 24990 },
+}
+
+function SuscripcionSection({ isDark }: { isDark: boolean }) {
+  const t = useMemo(() => getTheme(isDark), [isDark])
+  const [susc, setSusc] = useState<SuscripcionInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [confirmandoCancel, setConfirmandoCancel] = useState(false)
+  const [cambiandoPlan, setCambiandoPlan] = useState(false)
+  const [accionLoading, setAccionLoading] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/suscripcion')
+      if (res.ok) setSusc(await res.json())
+    } catch {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const esPremium = (susc?.plan_id ?? '').toLowerCase()
+  const planActual = PLAN_LABEL[esPremium] ?? PLAN_LABEL.normal
+  const otroPlanId = esPremium === 'premium' || esPremium === 'business' ? 'pro' : 'business'
+  const otroPlan = PLAN_LABEL[otroPlanId]
+  const cambiando = esPremium === 'premium' || esPremium === 'business' ? 'a Normal' : 'a Premium'
+
+  const cancelar = async () => {
+    setAccionLoading(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/suscripcion/cancelar', { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) {
+        setMsg({ text: '✓ Suscripción cancelada. No te vamos a cobrar más.', ok: true })
+        setConfirmandoCancel(false)
+        cargar()
+      } else {
+        setMsg({ text: data.error ?? 'Error al cancelar', ok: false })
+      }
+    } catch {
+      setMsg({ text: 'Error de conexión', ok: false })
+    }
+    setAccionLoading(false)
+    setTimeout(() => setMsg(null), 6000)
+  }
+
+  const cambiarPlan = async () => {
+    setAccionLoading(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/suscripcion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: otroPlanId }),
+      })
+      const data = await res.json()
+      if (data.init_point) {
+        window.location.href = data.init_point
+      } else {
+        setMsg({ text: data.error ?? 'Error al generar link de pago', ok: false })
+      }
+    } catch {
+      setMsg({ text: 'Error de conexión', ok: false })
+    }
+    setAccionLoading(false)
+  }
+
+  const card: React.CSSProperties = {
+    background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 12, padding: 24,
+  }
+
+  if (loading) {
+    return (
+      <div style={card}>
+        <p style={{ margin: 0, color: t.textMuted, fontSize: 13 }}>Cargando tu suscripción…</p>
+      </div>
+    )
+  }
+
+  if (!susc) return null
+
+  const estadoBadge =
+    susc.estado === 'activa'    ? { bg: COLORS.badge.ok.bg,        text: COLORS.badge.ok.text,        label: 'Activa' } :
+    susc.estado === 'trial'     ? { bg: COLORS.badge.bajo.bg,      text: COLORS.badge.bajo.text,      label: 'Período de prueba' } :
+    susc.estado === 'vencida'   ? { bg: COLORS.badge.error.bg,     text: COLORS.badge.error.text,     label: 'Vencida' } :
+    susc.estado === 'cancelada' ? { bg: '#F3F4F6',                 text: '#6B7280',                   label: 'Cancelada' } :
+    susc.estado === 'pausada'   ? { bg: COLORS.badge.pendiente.bg, text: COLORS.badge.pendiente.text, label: 'Pausada' } :
+    { bg: '#F3F4F6', text: '#6B7280', label: susc.estado }
+
+  const diasTrialRestantes = susc.estado === 'trial' && susc.trial_fin
+    ? Math.max(0, Math.ceil((new Date(susc.trial_fin).getTime() - Date.now()) / (1000 * 3600 * 24)))
+    : null
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: t.text }}>
+            Tu suscripción
+          </p>
+          <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>
+            Gestioná tu plan y método de pago
+          </p>
+        </div>
+        <span style={{
+          background: estadoBadge.bg, color: estadoBadge.text,
+          padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700,
+        }}>
+          {estadoBadge.label}
+        </span>
+      </div>
+
+      {msg && (
+        <div style={{
+          background: msg.ok ? COLORS.badge.ok.bg : COLORS.badge.error.bg,
+          color: msg.ok ? COLORS.badge.ok.text : COLORS.badge.error.text,
+          border: `1px solid ${msg.ok ? '#86EFAC' : '#FECDD3'}`,
+          borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600,
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Detalle del plan actual */}
+      <div style={{
+        background: isDark ? 'rgba(94,234,212,0.06)' : '#F0FDFA',
+        border: `1px solid ${t.borderCard}`,
+        borderRadius: 10, padding: '14px 18px', marginBottom: 18,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: t.text }}>
+            {planActual.nombre}
+          </p>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: COLORS.primary }}>
+            ${planActual.precio.toLocaleString('es-AR')}
+            <span style={{ fontSize: 12, fontWeight: 500, color: t.textMuted }}>/mes</span>
+          </p>
+        </div>
+        {diasTrialRestantes !== null && (
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted }}>
+            Te quedan <strong>{diasTrialRestantes} {diasTrialRestantes === 1 ? 'día' : 'días'}</strong> de prueba gratuita.
+            El primer cobro es el día 31.
+          </p>
+        )}
+        {susc.estado === 'cancelada' && (
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted }}>
+            Tu suscripción fue cancelada. No te vamos a cobrar más.
+            Si querés volver, podés reactivar el plan en cualquier momento.
+          </p>
+        )}
+      </div>
+
+      {/* Botones de accion */}
+      {susc.estado !== 'cancelada' ? (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setCambiandoPlan(true)}
+            disabled={accionLoading}
+            style={{
+              background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+              padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+              boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+              opacity: accionLoading ? 0.7 : 1,
+            }}
+          >
+            🔄 Cambiar plan
+          </button>
+          <button
+            onClick={() => setConfirmandoCancel(true)}
+            disabled={accionLoading}
+            style={{
+              background: 'none',
+              border: `1px solid ${COLORS.danger}`,
+              borderRadius: 8, padding: '10px 18px',
+              color: COLORS.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              opacity: accionLoading ? 0.7 : 1,
+            }}
+          >
+            Cancelar suscripción
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setCambiandoPlan(true)}
+          disabled={accionLoading}
+          style={{
+            background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+            padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+            opacity: accionLoading ? 0.7 : 1,
+          }}
+        >
+          Reactivar suscripción
+        </button>
+      )}
+
+      <p style={{ margin: '14px 0 0', fontSize: 11, color: t.textMuted, lineHeight: 1.5 }}>
+        Al cancelar, no se generan más cobros. Mantenés acceso hasta que termine el ciclo
+        que ya pagaste. Podés reactivar cuando quieras sin perder tus datos.
+      </p>
+
+      {/* Modal confirmar cancelacion */}
+      {confirmandoCancel && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(4,47,46,0.55)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{
+            background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
+            padding: 28, width: '100%', maxWidth: 440,
+            boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
+          }}>
+            <p style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
+              ¿Cancelar tu suscripción?
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
+              No te vamos a cobrar el próximo mes. Vas a poder seguir usando Stockio
+              hasta que termine el período ya pagado.
+              Tus datos quedan guardados y podés reactivar cuando quieras.
+            </p>
+            <div style={{
+              background: COLORS.badge.bajo.bg, color: COLORS.badge.bajo.text,
+              border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 14px',
+              fontSize: 12, marginBottom: 18,
+            }}>
+              <strong>Importante:</strong> esta acción cancela el débito automático en Mercado Pago.
+              Si tenés facturas pendientes, podés seguir generándolas hasta el último día.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                onClick={() => setConfirmandoCancel(false)}
+                disabled={accionLoading}
+                style={{
+                  background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: '10px 18px', cursor: 'pointer', color: t.textMuted, fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Mantener mi plan
+              </button>
+              <button
+                onClick={cancelar}
+                disabled={accionLoading}
+                style={{
+                  background: COLORS.danger, color: '#fff', border: 'none', borderRadius: 8,
+                  padding: '10px 22px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                  opacity: accionLoading ? 0.7 : 1,
+                }}
+              >
+                {accionLoading ? 'Cancelando…' : 'Sí, cancelar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal cambio de plan */}
+      {cambiandoPlan && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(4,47,46,0.55)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{
+            background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
+            padding: 28, width: '100%', maxWidth: 460,
+            boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
+          }}>
+            <p style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
+              {susc.estado === 'cancelada' ? 'Reactivar suscripción' : `Cambiar ${cambiando}`}
+            </p>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
+              Te vamos a redirigir a Mercado Pago para confirmar el cambio. El cobro
+              del nuevo plan empieza recién en el próximo ciclo de facturación.
+            </p>
+            <div style={{
+              background: isDark ? 'rgba(94,234,212,0.06)' : '#F0FDFA',
+              border: `1px solid ${t.borderCard}`,
+              borderRadius: 10, padding: '14px 18px', marginBottom: 18,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+                  Nuevo plan:
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: t.text }}>
+                  {otroPlan.nombre}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
+                <span style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+                  Precio:
+                </span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: COLORS.primary }}>
+                  ${otroPlan.precio.toLocaleString('es-AR')}/mes
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                onClick={() => setCambiandoPlan(false)}
+                disabled={accionLoading}
+                style={{
+                  background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: '10px 18px', cursor: 'pointer', color: t.textMuted, fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={cambiarPlan}
+                disabled={accionLoading}
+                style={{
+                  background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+                  padding: '10px 22px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                  opacity: accionLoading ? 0.7 : 1,
+                  boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+                }}
+              >
+                {accionLoading ? 'Generando link…' : 'Continuar a Mercado Pago →'}
+              </button>
+            </div>
           </div>
         </div>
       )}
