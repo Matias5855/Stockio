@@ -56,6 +56,15 @@ export default function Footer() {
           <FooterLink href="/register">Probar gratis</FooterLink>
         </div>
 
+        {/* Legal */}
+        <div>
+          <h4 style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
+            Legal
+          </h4>
+          <FooterLink href="/terminos">Términos y Condiciones</FooterLink>
+          <FooterLink href="/privacidad">Política de Privacidad</FooterLink>
+        </div>
+
         {/* Contacto */}
         <div>
           <h4 style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>

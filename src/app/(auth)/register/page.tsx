@@ -46,6 +46,7 @@ export default function RegisterPage() {
   const [plan, setPlan] = useState<'normal' | 'premium'>('normal')
   const [form, setForm] = useState({ nombre: '', negocio: '', email: '', password: '' })
   const [showPass, setShowPass] = useState(false)
+  const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -171,6 +172,7 @@ export default function RegisterPage() {
         setError('Completá todos los campos'); return false
       }
       if (form.password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return false }
+      if (!aceptaTerminos) { setError('Para continuar, aceptá los Términos y la Política de Privacidad'); return false }
       setError(null)
       return true
     }
@@ -222,6 +224,31 @@ export default function RegisterPage() {
                 {showPass ? '🙈' : '👁'}
               </button>
             </div>
+
+            {/* Checkbox aceptar Terminos y Privacidad — obligatorio por Ley 24.240 */}
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              padding: '10px 0', cursor: 'pointer',
+              fontSize: 13, color: '#1C4542', lineHeight: 1.55,
+            }}>
+              <input
+                type="checkbox"
+                checked={aceptaTerminos}
+                onChange={e => setAceptaTerminos(e.target.checked)}
+                style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: COLORS.primary }}
+              />
+              <span>
+                Acepto los{' '}
+                <Link href="/terminos" target="_blank" style={{ color: COLORS.primary, fontWeight: 600, textDecoration: 'underline' }}>
+                  Términos y Condiciones
+                </Link>
+                {' '}y la{' '}
+                <Link href="/privacidad" target="_blank" style={{ color: COLORS.primary, fontWeight: 600, textDecoration: 'underline' }}>
+                  Política de Privacidad
+                </Link>
+                {' '}de Stockio.
+              </span>
+            </label>
 
             {error && (
               <div style={{ background: '#FFF1F2', color: '#9F1239', border: '1px solid #FECDD3', borderRadius: 8, padding: '10px 12px', fontSize: 13 }}>
