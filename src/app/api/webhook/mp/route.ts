@@ -124,9 +124,18 @@ export async function POST(req: NextRequest) {
         pending:    'trial',
       }
 
-      await supabase.from('suscripciones')
-        .update({ estado: estadoMap[susc.status] ?? 'vencida' })
-        .eq('mp_suscripcion_id', data.id)
+      // Matchear por external_reference (org_id que anexamos al init_point del
+      // plan). En el primer webhook mp_suscripcion_id local todavia es NULL,
+      // por eso no se podia matchear por ese campo. Aprovechamos para guardarlo.
+      const orgId = susc.external_reference
+      if (orgId) {
+        await supabase.from('suscripciones')
+          .update({
+            estado: estadoMap[susc.status] ?? 'vencida',
+            mp_suscripcion_id: data.id,
+          })
+          .eq('org_id', orgId)
+      }
     }
 
     return NextResponse.json({ ok: true })
