@@ -53,7 +53,9 @@ export default function Nav() {
         {/* Links desktop */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} className="landing-nav-links">
           <a href="#features" style={linkStyle}>Funciones</a>
+          <a href="#precios" style={linkStyle}>Precios</a>
           <a href="#beneficios" style={linkStyle}>Beneficios</a>
+          <a href="#resultados" style={linkStyle}>Resultados</a>
           <a href="#faq" style={linkStyle}>Preguntas</a>
         </div>
 
@@ -96,7 +98,9 @@ export default function Nav() {
       {mobileOpen && (
         <div style={{ padding: '8px 24px 16px', borderTop: '1px solid #CCFBF1' }}>
           <a href="#features" style={{ ...linkStyle, display: 'block', padding: 10 }}>Funciones</a>
+          <a href="#precios" style={{ ...linkStyle, display: 'block', padding: 10 }}>Precios</a>
           <a href="#beneficios" style={{ ...linkStyle, display: 'block', padding: 10 }}>Beneficios</a>
+          <a href="#resultados" style={{ ...linkStyle, display: 'block', padding: 10 }}>Resultados</a>
           <a href="#faq" style={{ ...linkStyle, display: 'block', padding: 10 }}>Preguntas</a>
         </div>
       )}

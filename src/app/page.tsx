@@ -7,7 +7,9 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import Nav from '@/components/landing/Nav'
 import Hero from '@/components/landing/Hero'
 import Features from '@/components/landing/Features'
+import Pricing from '@/components/landing/Pricing'
 import Beneficios from '@/components/landing/Beneficios'
+import Resultados from '@/components/landing/Resultados'
 import FAQ from '@/components/landing/FAQ'
 import CtaFinal from '@/components/landing/CtaFinal'
 import Footer from '@/components/landing/Footer'
@@ -34,7 +36,9 @@ export default async function Home() {
       <Nav />
       <Hero />
       <Features />
+      <Pricing />
       <Beneficios />
+      <Resultados />
       <FAQ />
       <CtaFinal />
       <Footer />
