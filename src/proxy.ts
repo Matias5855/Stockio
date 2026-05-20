@@ -118,15 +118,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  // Sesion expirada — limpiar cookies
-  if (error && !isPublic) {
+  // APIs manejan su propia auth — devuelven JSON, nunca redirect (un redirect
+  // a /login convertia el POST en GET y devolvia 405 desde la page handler).
+  const isApi = pathname.startsWith('/api/')
+
+  // Sesion expirada — limpiar cookies y mandar a login (solo pages)
+  if (error && !isPublic && !isApi) {
     const res = NextResponse.redirect(new URL('/login', request.url))
     res.cookies.delete('sb-access-token')
     res.cookies.delete('sb-refresh-token')
     return addSecurityHeaders(res, origin)
   }
 
-  if (!user && !isPublic && !isWebhook && !isAuthPublicApi) {
+  if (!user && !isPublic && !isApi) {
     const loginUrl = new URL('/login', request.url)
     if (pathname !== '/') loginUrl.searchParams.set('redirect', pathname)
     return addSecurityHeaders(NextResponse.redirect(loginUrl), origin)
