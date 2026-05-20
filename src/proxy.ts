@@ -108,13 +108,14 @@ export async function proxy(request: NextRequest) {
   const isLanding    = pathname === '/'
   const isPublic     = publicPaths.some(p => pathname.startsWith(p)) || isLanding
   const isWebhook    = pathname.startsWith('/api/webhook')
+  const isCron       = pathname.startsWith('/api/cron')
   const isAsset      = pathname.startsWith('/_next') || pathname.startsWith('/icon') || pathname === '/manifest.json' || pathname === '/sw.js'
 
   if (isAsset) return addSecurityHeaders(response, origin)
 
   // Rutas de API protegidas (incluye /api/auth/register que tiene su propio handling pero no requiere user)
   const isAuthPublicApi = pathname.startsWith('/api/auth/register')
-  if (pathname.startsWith('/api/') && !isWebhook && !isAuthPublicApi && !user) {
+  if (pathname.startsWith('/api/') && !isWebhook && !isCron && !isAuthPublicApi && !user) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
