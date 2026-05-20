@@ -281,31 +281,53 @@ export default function RegisterPage() {
       setLoading(true)
       setError(null)
       try {
+        // 1. Crear cuenta + organizacion + profile + suscripcion trial
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...form, plan }),
         })
-        const data = await res.json()
-        if (!data.ok) { setError(data.error); setLoading(false); return }
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !data?.ok) {
+          setError(data?.error || `No pudimos crear la cuenta (${res.status})`)
+          setLoading(false)
+          return
+        }
 
-        const mpRes = await fetch('/api/suscripcion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan_id: plan, payer_email: form.email, org_id: data.org_id }),
+        // 2. Loguear ANTES de llamar a /api/suscripcion — el endpoint
+        //    requiere requireRole(['owner']) y el middleware bloquea APIs sin sesion
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password,
         })
-        const mpData = await mpRes.json()
+        if (signInErr) {
+          setError('Tu cuenta se creo pero no pudimos iniciar sesion. Inicia sesion manualmente.')
+          setLoading(false)
+          return
+        }
 
-        await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
         localStorage.setItem('stk_org_id', data.org_id)
         localStorage.setItem('stk_org_nombre', form.negocio)
 
+        // 3. Mapear plan_id al formato que espera MP: normal->pro, premium->business
+        const mpPlanId = plan === 'premium' ? 'business' : 'pro'
+        const mpRes = await fetch('/api/suscripcion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_id: mpPlanId, payer_email: form.email }),
+        })
+        // Manejo defensivo: si la respuesta no es JSON valida no rompemos el flow,
+        // el user ya tiene cuenta y sesion — lo mandamos al dashboard con aviso
+        const mpData = await mpRes.json().catch(() => null)
+
         setStep('procesando')
 
-        if (mpData.init_point) {
+        if (mpRes.ok && mpData?.init_point) {
           setTimeout(() => { window.location.href = mpData.init_point }, 1500)
         } else {
-          router.push('/dashboard')
+          // Si falla MP, igual entramos al dashboard. El user puede configurar
+          // el pago despues desde Configuracion -> Suscripcion.
+          setTimeout(() => router.push('/dashboard?suscripcion=pendiente'), 1500)
         }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Error desconocido')
