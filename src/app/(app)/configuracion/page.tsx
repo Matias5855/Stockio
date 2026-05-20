@@ -619,16 +619,14 @@ function QuickQR({ isDark }: { isDark: boolean }) {
 // ── TU SUSCRIPCIÓN ────────────────────────────────────────────
 type SuscripcionInfo = {
   estado: 'trial' | 'activa' | 'vencida' | 'cancelada' | 'pausada'
-  plan_id: 'normal' | 'premium' | 'pro' | 'business' | string
+  plan_id: 'normal' | 'premium' | string
   trial_fin: string | null
   mp_suscripcion_id?: string | null
 }
 
 const PLAN_LABEL: Record<string, { nombre: string; precio: number }> = {
-  normal:   { nombre: 'Stockio Normal',  precio: 14990 },
-  pro:      { nombre: 'Stockio Normal',  precio: 14990 },
-  premium:  { nombre: 'Stockio Premium', precio: 24990 },
-  business: { nombre: 'Stockio Premium', precio: 24990 },
+  normal:  { nombre: 'Stockio Normal',  precio: 14990 },
+  premium: { nombre: 'Stockio Premium', precio: 24990 },
 }
 
 function SuscripcionSection({ isDark }: { isDark: boolean }) {
@@ -651,11 +649,12 @@ function SuscripcionSection({ isDark }: { isDark: boolean }) {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const esPremium = (susc?.plan_id ?? '').toLowerCase()
-  const planActual = PLAN_LABEL[esPremium] ?? PLAN_LABEL.normal
-  const otroPlanId = esPremium === 'premium' || esPremium === 'business' ? 'pro' : 'business'
+  const planIdNorm = (susc?.plan_id ?? '').toLowerCase()
+  const esPremium = planIdNorm === 'premium'
+  const planActual = PLAN_LABEL[planIdNorm] ?? PLAN_LABEL.normal
+  const otroPlanId: 'normal' | 'premium' = esPremium ? 'normal' : 'premium'
   const otroPlan = PLAN_LABEL[otroPlanId]
-  const cambiando = esPremium === 'premium' || esPremium === 'business' ? 'a Normal' : 'a Premium'
+  const cambiando = esPremium ? 'a Normal' : 'a Premium'
 
   const cancelar = async () => {
     setAccionLoading(true)

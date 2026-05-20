@@ -309,12 +309,11 @@ export default function RegisterPage() {
         localStorage.setItem('stk_org_id', data.org_id)
         localStorage.setItem('stk_org_nombre', form.negocio)
 
-        // 3. Mapear plan_id al formato que espera MP: normal->pro, premium->business
-        const mpPlanId = plan === 'premium' ? 'business' : 'pro'
+        // 3. Crear suscripcion en MP — el plan_id ya es 'normal' o 'premium'
         const mpRes = await fetch('/api/suscripcion', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan_id: mpPlanId, payer_email: form.email }),
+          body: JSON.stringify({ plan_id: plan, payer_email: form.email }),
         })
         // Manejo defensivo: si la respuesta no es JSON valida no rompemos el flow,
         // el user ya tiene cuenta y sesion — lo mandamos al dashboard con aviso

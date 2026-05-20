@@ -49,12 +49,9 @@ const NAV: readonly NavItem[] = [
   { id: 'configuracion', label: 'Configuración', icon: '⚙' },
 ] as const
 
-// Acepta cualquier alias del plan Premium (sistema viejo usa 'business',
-// nuevo usa 'premium'). Tolerante a case.
 function esPlanPremium(planId?: string): boolean {
   if (!planId) return false
-  const p = planId.toLowerCase()
-  return p === 'premium' || p === 'business'
+  return planId.toLowerCase() === 'premium'
 }
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {

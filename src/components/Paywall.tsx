@@ -51,7 +51,7 @@ export default function Paywall({ estado, planId, email }: Props) {
       const res = await fetch('/api/suscripcion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_id: planId === 'premium' ? 'business' : 'pro', payer_email: email ?? '' }),
+        body: JSON.stringify({ plan_id: planId === 'premium' ? 'premium' : 'normal', payer_email: email ?? '' }),
       })
       const data = await res.json()
       if (data.init_point) {

@@ -15,7 +15,7 @@ const MP_BASE = 'https://api.mercadopago.com'
 // Lo armamos en runtime con el appUrl correcto.
 function buildPlanesConfig(appUrl: string) {
   return {
-    pro: {
+    normal: {
       reason: 'Stockio Normal',
       auto_recurring: {
         frequency: 1,
@@ -26,7 +26,7 @@ function buildPlanesConfig(appUrl: string) {
       },
       back_url: `${appUrl}/dashboard?suscripcion=ok`,
     },
-    business: {
+    premium: {
       reason: 'Stockio Premium',
       auto_recurring: {
         frequency: 1,

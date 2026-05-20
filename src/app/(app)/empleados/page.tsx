@@ -78,9 +78,8 @@ export default function EmpleadosPage() {
     setLoading(true)
     const { data: sus } = await supabase
       .from('suscripciones').select('plan_id').eq('org_id', orgId).single()
-    // Acepta 'premium', 'business' (MP) y variantes de case
     const planId = (sus?.plan_id ?? '').toLowerCase()
-    setEsPremium(planId === 'premium' || planId === 'business')
+    setEsPremium(planId === 'premium')
 
     const { data: perfiles } = await supabase
       .from('profiles').select('*')
