@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { escapeHtml } from '@/lib/schemas'
+import { from as emailFrom, replyTo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,7 +154,8 @@ async function procesarAvisos(opts: {
       const trialFinStr = new Date(s.trial_fin).toLocaleDateString('es-AR')
 
       await resend.emails.send({
-        from: 'Stockio <onboarding@resend.dev>',
+        from: emailFrom('Stockio'),
+        replyTo: replyTo(),
         to: email,
         subject: ASUNTOS[tipo],
         html: buildEmailHtml({ tipo, nombre, negocio, trialFinStr, appUrl }),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { parseBody, InvitarEmpleadoInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
 import { requireRole, AuthError } from '@/lib/auth/requireUser'
+import { from as emailFrom, replyTo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
     const roleDescSafe = escapeHtml(ROLES_DESC[role] ?? '')
 
     await resend.emails.send({
-      from: 'Stockio <onboarding@resend.dev>',
+      from: emailFrom('Stockio'),
+      replyTo: replyTo(),
       to: email,
       subject: `Te invitaron a usar Stockio en ${orgNameSafe}`,
       html: `

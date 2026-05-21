@@ -8,6 +8,7 @@ import { ticketBase64, TicketData } from '@/lib/ticket'
 import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
 import { parseBody, FacturaInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
 import { decryptSecret } from '@/lib/crypto'
+import { from as emailFrom, replyTo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -133,7 +134,8 @@ export async function POST(req: NextRequest) {
       const nroFacturaSafe = escapeHtml(venta.nro_factura)
 
       await resend.emails.send({
-        from: `${orgNameSafe} <onboarding@resend.dev>`,
+        from: emailFrom(orgNameSafe),
+        replyTo: replyTo(),
         to: email_cliente,
         subject: `Tu comprobante ${nroFacturaSafe}`,
         html: `

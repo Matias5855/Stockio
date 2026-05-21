@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { parseBody, RegisterInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
 import { rateLimit, getClientIp } from '@/lib/rateLimit'
+import { from as emailFrom, replyTo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,7 +78,8 @@ export async function POST(req: NextRequest) {
 
     try {
       await resend.emails.send({
-        from: 'Stockio <onboarding@resend.dev>',
+        from: emailFrom('Stockio'),
+        replyTo: replyTo(),
         to: email,
         subject: `¡Bienvenido a Stockio, ${primerNombreSafe}! 🎉`,
         html: `
