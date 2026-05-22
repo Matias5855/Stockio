@@ -3,29 +3,32 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { redactSensitive } from "@/lib/sentry-redact";
 
 Sentry.init({
   dsn: "https://26fd059dac35148777809c43188a7a40@o4511430892650496.ingest.us.sentry.io/4511430905692160",
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+  // Replay desactivado: el wizard lo prendio con sample 10%, pero por privacidad
+  // de los clientes (ven datos de ventas, cuotas, etc.) preferimos NO grabarlo.
+  // Si en el futuro queremos, descomentar la linea de integrations y los samples.
+  integrations: [
+    // Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+  ],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
-  // Enable logs to be sent to Sentry
+  // 10% sampling en prod para no quemar cuota mensual de Sentry
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
   enableLogs: true,
 
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
-  replaysSessionSampleRate: 0.1,
+  // replaysSessionSampleRate: 0,
+  // replaysOnErrorSampleRate: 0,
 
-  // Define how likely Replay events are sampled when an error occurs.
-  replaysOnErrorSampleRate: 1.0,
+  // No mandar IPs ni headers automaticamente. El cliente puede igual incluir
+  // tokens en URLs/bodies — los redactamos en beforeSend.
+  sendDefaultPii: false,
 
-  // Enable sending user PII (Personally Identifiable Information)
-  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
+  beforeSend: redactSensitive,
+
+  enabled: process.env.NODE_ENV === "production",
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
