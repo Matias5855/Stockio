@@ -109,9 +109,14 @@ export async function proxy(request: NextRequest) {
   const isPublic     = publicPaths.some(p => pathname.startsWith(p)) || isLanding
   const isWebhook    = pathname.startsWith('/api/webhook')
   const isCron       = pathname.startsWith('/api/cron')
+  // Tunnel route de Sentry (configurado en next.config.ts -> withSentryConfig).
+  // Los reportes de error del browser pegan en /monitoring para evitar adblockers.
+  // Hay que dejarlos pasar sin auth y sin redirect — sino se pierden todos los
+  // errores de usuarios no logueados (registro, landing, recuperar password).
+  const isMonitoring = pathname.startsWith('/monitoring')
   const isAsset      = pathname.startsWith('/_next') || pathname.startsWith('/icon') || pathname === '/manifest.json' || pathname === '/sw.js'
 
-  if (isAsset) return addSecurityHeaders(response, origin)
+  if (isAsset || isMonitoring) return addSecurityHeaders(response, origin)
 
   // Rutas de API protegidas (incluye /api/auth/register que tiene su propio handling pero no requiere user)
   const isAuthPublicApi = pathname.startsWith('/api/auth/register')
