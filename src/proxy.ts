@@ -114,7 +114,12 @@ export async function proxy(request: NextRequest) {
   // Hay que dejarlos pasar sin auth y sin redirect — sino se pierden todos los
   // errores de usuarios no logueados (registro, landing, recuperar password).
   const isMonitoring = pathname.startsWith('/monitoring')
-  const isAsset      = pathname.startsWith('/_next') || pathname.startsWith('/icon') || pathname === '/manifest.json' || pathname === '/sw.js'
+  // Cualquier archivo estatico de /public/ (og-image.png, favicons, manifest,
+  // svgs de landing, etc). Antes solo cubria /_next y /icon*, pero los crawlers
+  // de WhatsApp/Facebook/Twitter para OG image piden /og-image.png y se les
+  // redirige a /login sin esto -> los previews aparecen vacios.
+  const isStaticFile = /\.(png|jpe?g|gif|svg|webp|avif|ico|css|js|map|woff2?|ttf|otf|eot|json|webmanifest|html|xml|txt|mp4|webm|pdf)$/i.test(pathname)
+  const isAsset      = pathname.startsWith('/_next') || isStaticFile
 
   if (isAsset || isMonitoring) return addSecurityHeaders(response, origin)
 
@@ -142,7 +147,13 @@ export async function proxy(request: NextRequest) {
     return addSecurityHeaders(NextResponse.redirect(loginUrl), origin)
   }
 
-  if (user && isPublic) {
+  // Si el user esta logueado y entra a /login, /register, landing etc. lo
+  // mandamos al dashboard. EXCEPCION: /recuperar/* — un user logueado puede
+  // estar pidiendo cambiar su password desde el link del email. Si lo
+  // redirigimos, el fragmento #access_token=... del link se pierde (los
+  // fragments no viajan al server) y el SDK de Supabase no puede procesarlo.
+  const isRecovery = pathname.startsWith('/recuperar')
+  if (user && isPublic && !isRecovery) {
     return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)), origin)
   }
 
