@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { COLORS } from '@/lib/theme'
 
 export default function RecuperarPage() {
   const supabase = createClient()
@@ -14,6 +16,9 @@ export default function RecuperarPage() {
     setLoading(true)
     setError(null)
 
+    // OJO: la URL del redirect debe coincidir con la carpeta real del archivo.
+    // Carpeta: src/app/(auth)/recuperar/nueva-contrasena/
+    // (sin tilde, sin ñ — evita problemas de encoding en URLs).
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/recuperar/nueva-contrasena`,
     })
@@ -24,56 +29,138 @@ export default function RecuperarPage() {
   }
 
   const inp: React.CSSProperties = {
-    background: '#1E1E26', border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8, padding: '10px 14px', color: '#F0EFF8',
-    fontSize: 14, outline: 'none', width: '100%', boxSizing: 'border-box',
+    background: '#FFFFFF',
+    border: '1px solid #CCFBF1',
+    borderRadius: 10,
+    padding: '12px 14px',
+    color: '#1C4542',
+    fontSize: 14,
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0F0F12', padding: 20 }}>
-      <div style={{ background: '#17171C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 40, width: '100%', maxWidth: 380 }}>
-        <h1 style={{ color: '#7C6FE0', fontWeight: 800, fontSize: 24, margin: '0 0 4px' }}>Stockio</h1>
-        <p style={{ color: '#7A7A95', margin: '0 0 28px', fontSize: 14 }}>Recuperar contraseña</p>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '32px 20px',
+      background: '#F0FDFA',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    }}>
+      <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 28 }}>
+        <div style={{
+          width: 36, height: 36, background: COLORS.primary, color: '#FFFFFF',
+          borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 800, fontSize: 18,
+        }}>S</div>
+        <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 22 }}>Stockio</span>
+      </Link>
+
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #CCFBF1',
+        borderRadius: 16,
+        padding: 36,
+        width: '100%',
+        maxWidth: 420,
+        boxShadow: '0 4px 24px rgba(4,47,46,0.06)',
+      }}>
+        <h1 style={{
+          color: '#042F2E', fontWeight: 800, fontSize: 22, margin: 0,
+          letterSpacing: '-0.02em',
+        }}>
+          Recuperar contraseña
+        </h1>
+        <p style={{ color: '#6B7280', margin: '4px 0 24px', fontSize: 13 }}>
+          Te mandamos un link a tu email para crear una nueva
+        </p>
 
         {sent ? (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
-            <p style={{ fontWeight: 700, fontSize: 16, color: '#F0EFF8', marginBottom: 8 }}>¡Email enviado!</p>
-            <p style={{ color: '#7A7A95', fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-              Revisá tu bandeja de entrada en <strong style={{ color: '#F0EFF8' }}>{email}</strong> y hacé click en el link para crear una nueva contraseña.
+            <div style={{
+              width: 56, height: 56,
+              borderRadius: '50%',
+              background: '#DCFCE7',
+              color: '#166534',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 26,
+              margin: '0 auto 16px',
+            }}>
+              ✓
+            </div>
+            <p style={{ fontWeight: 700, fontSize: 16, color: '#042F2E', margin: '0 0 8px' }}>
+              ¡Email enviado!
             </p>
-            <p style={{ color: '#7A7A95', fontSize: 12 }}>
-              ¿No llegó? Revisá la carpeta de spam.
+            <p style={{ color: '#1C4542', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px' }}>
+              Revisá tu bandeja de entrada en{' '}
+              <strong style={{ color: '#042F2E' }}>{email}</strong>{' '}
+              y hacé click en el link para crear una nueva contraseña.
             </p>
-            <a href="/login" style={{ display: 'block', marginTop: 20, color: '#7C6FE0', fontSize: 14, textDecoration: 'none' }}>
+            <p style={{ color: '#6B7280', fontSize: 12, margin: '0 0 20px' }}>
+              ¿No llegó? Revisá la carpeta de spam. El link expira en 1 hora.
+            </p>
+            <Link href="/login" style={{
+              display: 'inline-block',
+              color: COLORS.primary, fontWeight: 600, fontSize: 14,
+              textDecoration: 'none',
+            }}>
               ← Volver al login
-            </a>
+            </Link>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <p style={{ color: '#7A7A95', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-              Ingresá tu email y te mandamos un link para crear una nueva contraseña.
-            </p>
             <input
               type="email"
               placeholder="tu@email.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleRecover()}
+              autoComplete="email"
+              autoFocus
               style={inp}
             />
+
             {error && (
-              <div style={{ background: 'rgba(224,85,85,0.12)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 8, padding: '10px 14px', color: '#E05555', fontSize: 13 }}>
+              <div style={{
+                background: '#FFF1F2',
+                color: '#9F1239',
+                border: '1px solid #FECDD3',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 13,
+              }}>
                 {error}
               </div>
             )}
-            <button onClick={handleRecover} disabled={loading || !email}
-              style={{ background: '#7C6FE0', color: '#fff', border: 'none', borderRadius: 8, padding: 11, fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: loading || !email ? 0.7 : 1 }}>
-              {loading ? 'Enviando...' : 'Enviar link de recuperación'}
+
+            <button
+              onClick={handleRecover}
+              disabled={loading || !email}
+              style={{
+                background: COLORS.primary,
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 10,
+                padding: 13,
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: loading || !email ? 'not-allowed' : 'pointer',
+                opacity: loading || !email ? 0.6 : 1,
+                boxShadow: loading || !email ? 'none' : '0 4px 14px rgba(13,148,136,0.25)',
+              }}
+            >
+              {loading ? 'Enviando…' : 'Enviar link de recuperación'}
             </button>
-            <a href="/login" style={{ color: '#7A7A95', fontSize: 13, textAlign: 'center', textDecoration: 'none' }}>
+
+            <Link href="/login" style={{
+              color: '#6B7280', fontSize: 13, textAlign: 'center',
+              textDecoration: 'none', marginTop: 4,
+            }}>
               ← Volver al login
-            </a>
+            </Link>
           </div>
         )}
       </div>
