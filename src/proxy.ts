@@ -102,7 +102,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  const publicPaths  = ['/login', '/register', '/invite', '/recuperar', '/terminos', '/privacidad']
+  const publicPaths  = ['/login', '/register', '/invite', '/recuperar', '/terminos', '/privacidad', '/auth']
   // La landing publica vive en "/" exacto — usuarios logueados son redirigidos
   // a /dashboard desde la propia page server-side, no acá.
   const isLanding    = pathname === '/'
@@ -148,12 +148,16 @@ export async function proxy(request: NextRequest) {
   }
 
   // Si el user esta logueado y entra a /login, /register, landing etc. lo
-  // mandamos al dashboard. EXCEPCION: /recuperar/* — un user logueado puede
-  // estar pidiendo cambiar su password desde el link del email. Si lo
-  // redirigimos, el fragmento #access_token=... del link se pierde (los
-  // fragments no viajan al server) y el SDK de Supabase no puede procesarlo.
+  // mandamos al dashboard. EXCEPCIONES:
+  //  - /recuperar/* — un user logueado puede estar pidiendo cambiar su password
+  //    desde el link del email. Si lo redirigimos, el form de nueva password no
+  //    se carga.
+  //  - /auth/* — endpoint server-side que procesa los token_hash de Supabase.
+  //    Aunque el user este logueado, el verifyOtp debe correr para crear la
+  //    nueva sesion del flow de recovery.
   const isRecovery = pathname.startsWith('/recuperar')
-  if (user && isPublic && !isRecovery) {
+  const isAuthCallback = pathname.startsWith('/auth')
+  if (user && isPublic && !isRecovery && !isAuthCallback) {
     return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)), origin)
   }
 

@@ -1,4 +1,16 @@
 'use client'
+
+/**
+ * Form de "crear nueva contraseña" del flow de recovery.
+ *
+ * Cuando el user llega aca, /auth/confirm ya proceso el token_hash del link
+ * y creo la sesion via cookies. Por eso podemos llamar a updateUser() directo
+ * sin necesidad de escuchar PASSWORD_RECOVERY ni manejar fragmentos del URL.
+ *
+ * Si por algun motivo no hay sesion al llegar (link tampered, cookies
+ * bloqueadas, etc.) mandamos a /recuperar con el aviso de "link invalido".
+ */
+
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -13,28 +25,18 @@ export default function NuevaContrasenaPage() {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
-  const [linkExpired, setLinkExpired] = useState(false)
+  const [checking, setChecking] = useState(true)
 
-  // Supabase dispara PASSWORD_RECOVERY cuando el browser carga el link del email.
-  // Si pasan 5 segundos sin evento, asumimos que el link es invalido o expiro.
+  // Verificar al cargar que hay sesion (deberia haberla porque /auth/confirm
+  // la creo). Si no, mandar a /recuperar con el aviso.
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        router.replace('/recuperar?error=invalid_link')
+        return
+      }
+      setChecking(false)
     })
-
-    const timeout = setTimeout(() => {
-      // Si despues de 5s no llego PASSWORD_RECOVERY, el link no es valido
-      setReady(prev => {
-        if (!prev) setLinkExpired(true)
-        return prev
-      })
-    }, 5000)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -84,8 +86,7 @@ export default function NuevaContrasenaPage() {
     </div>
   )
 
-  // Estado 1: validando el link
-  if (!ready && !linkExpired) {
+  if (checking) {
     return (
       <PageWrap>
         <div style={{
@@ -101,47 +102,6 @@ export default function NuevaContrasenaPage() {
     )
   }
 
-  // Estado 2: el link es invalido o expiro
-  if (linkExpired) {
-    return (
-      <PageWrap>
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #CCFBF1', borderRadius: 16,
-          padding: 36, width: '100%', maxWidth: 420, textAlign: 'center',
-          boxShadow: '0 4px 24px rgba(4,47,46,0.06)',
-        }}>
-          <div style={{
-            width: 56, height: 56,
-            borderRadius: '50%',
-            background: '#FFF1F2', color: '#9F1239',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 26, margin: '0 auto 16px',
-          }}>
-            ⚠
-          </div>
-          <p style={{ fontWeight: 700, fontSize: 16, color: '#042F2E', margin: '0 0 8px' }}>
-            El link no es válido o expiró
-          </p>
-          <p style={{ color: '#1C4542', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px' }}>
-            Los links de recuperación expiran en 1 hora por seguridad.
-            Pedí uno nuevo desde el formulario.
-          </p>
-          <Link href="/recuperar" style={{
-            display: 'inline-block',
-            background: COLORS.primary, color: '#FFFFFF',
-            border: 'none', borderRadius: 10,
-            padding: '11px 24px', fontSize: 14, fontWeight: 700,
-            textDecoration: 'none',
-            boxShadow: '0 4px 14px rgba(13,148,136,0.25)',
-          }}>
-            Pedir nuevo link
-          </Link>
-        </div>
-      </PageWrap>
-    )
-  }
-
-  // Estado 3: link valido, mostrar form para nueva password
   return (
     <PageWrap>
       <div style={{

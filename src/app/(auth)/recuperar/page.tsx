@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { COLORS } from '@/lib/theme'
@@ -11,16 +11,27 @@ export default function RecuperarPage() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Si llegamos con ?error=invalid_link (el endpoint /auth/confirm
+  // nos redirigio aca porque el token expiro o es invalido), mostrar aviso.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'invalid_link') {
+      setError('El link del email expiró o ya fue usado. Pedí uno nuevo abajo.')
+    }
+  }, [])
+
   const handleRecover = async () => {
     if (!email) return
     setLoading(true)
     setError(null)
 
-    // OJO: la URL del redirect debe coincidir con la carpeta real del archivo.
-    // Carpeta: src/app/(auth)/recuperar/nueva-contrasena/
-    // (sin tilde, sin ñ — evita problemas de encoding en URLs).
+    // El link del email pega en /auth/confirm que es un route handler server-side.
+    // Ese endpoint hace verifyOtp() con el token_hash y crea la sesion via cookies,
+    // despues redirige a `next` con la sesion ya activa. Esto es necesario porque
+    // @supabase/ssr usa flow PKCE y los tokens NO vienen en el fragment (#) sino
+    // en query params (?token_hash=...) — no se pueden procesar client-side.
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/recuperar/nueva-contrasena`,
+      redirectTo: `${window.location.origin}/auth/confirm?next=/recuperar/nueva-contrasena`,
     })
 
     if (error) { setError(error.message); setLoading(false); return }
