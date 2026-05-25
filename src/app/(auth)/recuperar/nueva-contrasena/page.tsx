@@ -17,6 +17,35 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { COLORS } from '@/lib/theme'
 
+// IMPORTANTE: este wrapper TIENE que estar definido fuera del componente.
+// Si se define adentro, cada render crea una funcion nueva -> React desmonta
+// y vuelve a montar todo el subtree, lo que hace que el foco salte al input
+// con autoFocus en cada tecla. Bug clasico: tipeas en "Confirmar contraseña"
+// y el cursor vuelve solo al primer input.
+function PageWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '32px 20px',
+      background: '#F0FDFA',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    }}>
+      <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 28 }}>
+        <div style={{
+          width: 36, height: 36, background: COLORS.primary, color: '#FFFFFF',
+          borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 800, fontSize: 18,
+        }}>S</div>
+        <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 22 }}>Stockio</span>
+      </Link>
+      {children}
+    </div>
+  )
+}
+
 export default function NuevaContrasenaPage() {
   const supabase = createClient()
   const router = useRouter()
@@ -63,28 +92,6 @@ export default function NuevaContrasenaPage() {
     width: '100%',
     boxSizing: 'border-box',
   }
-
-  const PageWrap = ({ children }: { children: React.ReactNode }) => (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '32px 20px',
-      background: '#F0FDFA',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    }}>
-      <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 28 }}>
-        <div style={{
-          width: 36, height: 36, background: COLORS.primary, color: '#FFFFFF',
-          borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, fontSize: 18,
-        }}>S</div>
-        <span style={{ color: '#042F2E', fontWeight: 800, fontSize: 22 }}>Stockio</span>
-      </Link>
-      {children}
-    </div>
-  )
 
   if (checking) {
     return (
