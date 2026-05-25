@@ -7,6 +7,7 @@ import { getTheme, COLORS } from '@/lib/theme'
 import BusquedaGlobal from '@/components/BusquedaGlobal'
 import Notificaciones from '@/components/Notificaciones'
 import Paywall, { TrialBanner, EstadoSuscripcion } from '@/components/Paywall'
+import OnboardingWizard from '@/components/OnboardingWizard'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -82,6 +83,11 @@ export default function AppLayout() {
   const [orgNombre, setOrgNombre] = useState('Gestión PyME')
   const [suscripcion, setSuscripcion] = useState<SuscripcionInfo | null>(null)
   const [suscripcionLoaded, setSuscripcionLoaded] = useState(false)
+  // Onboarding: solo aparece si la org tiene onboarding_completado=false.
+  // showOnboarding controla la visibilidad del modal en este render
+  // (separado del flag de DB para permitir "Saltar" sin esperar el round-trip).
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingOrgId, setOnboardingOrgId] = useState<string | null>(null)
 
   useEffect(() => {
     syncManager.init()
@@ -109,6 +115,33 @@ export default function AppLayout() {
         setSuscripcionLoaded(true)
       })
       .catch(() => setSuscripcionLoaded(true))
+
+    // Onboarding: chequear si el negocio ya lo completo.
+    // Si la columna no existe todavia (SQL pendiente), el catch evita romper.
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: profile } = await supabase
+          .from('profiles').select('org_id').eq('id', user.id).single()
+        if (!profile?.org_id) return
+
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('onboarding_completado, name')
+          .eq('id', profile.org_id)
+          .single()
+
+        setOnboardingOrgId(profile.org_id)
+        // Solo mostrar si el flag esta explicitamente false. Si es null/undefined
+        // (columna recien agregada y aun no asignada) tambien lo mostramos.
+        if (org && org.onboarding_completado !== true) {
+          setShowOnboarding(true)
+        }
+      } catch {
+        // Silencioso: si falla, simplemente no mostramos el wizard.
+      }
+    })()
 
     const onOnline = () => { setIsOffline(false); syncManager.sync() }
     const onOffline = () => setIsOffline(true)
@@ -186,6 +219,15 @@ export default function AppLayout() {
 
   return (
     <NavContext.Provider value={navValue}>
+      {/* Onboarding wizard — overlay sobre toda la app en primer login */}
+      {showOnboarding && onboardingOrgId && (
+        <OnboardingWizard
+          orgId={onboardingOrgId}
+          initialOrgName={orgNombre !== 'Gestión PyME' ? orgNombre : undefined}
+          onDone={() => setShowOnboarding(false)}
+        />
+      )}
+
       <div style={{
         display: 'flex',
         height: '100vh',
