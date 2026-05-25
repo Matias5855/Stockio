@@ -73,3 +73,23 @@ export async function requireRole(allowed: readonly string[]): Promise<OrgAuthCo
   }
   return ctx
 }
+
+/**
+ * Garantiza que el user sea admin del SITIO (no de una org). Solo lo usa
+ * el dueño de Stockio para el panel /admin. Lee profiles.is_site_admin.
+ *
+ * Si el flag no existe (columna no creada todavia) devuelve 403, no error 500.
+ */
+export async function requireSiteAdmin(): Promise<AuthContext> {
+  const ctx = await requireUser()
+  const { data: profile } = await ctx.supabase
+    .from('profiles')
+    .select('is_site_admin')
+    .eq('id', ctx.user.id)
+    .single()
+
+  if (!profile || profile.is_site_admin !== true) {
+    throw new AuthError('Permisos insuficientes', 403)
+  }
+  return ctx
+}
