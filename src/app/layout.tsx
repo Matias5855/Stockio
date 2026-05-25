@@ -6,10 +6,10 @@ const SITE_URL = 'https://stockio.com.ar'
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Stockio — Gestión inteligente para tu PyME',
+    default: 'Stockio — Gestión de stock, ventas y cuotas para PyMEs',
     template: '%s · Stockio',
   },
-  description: 'Stock, ventas, cuotas y facturación en un solo lugar. Hecho para comercios de indumentaria en Argentina.',
+  description: 'Stock, ventas, cuotas y facturación AFIP en un solo lugar para PyMEs de indumentaria en Argentina. Probalo 30 días gratis sin permanencia.',
   applicationName: 'Stockio',
   authors: [{ name: 'Stockio' }],
   keywords: [
@@ -40,14 +40,14 @@ export const metadata: Metadata = {
     locale: 'es_AR',
     url: SITE_URL,
     siteName: 'Stockio',
-    title: 'Stockio — Gestión inteligente para tu PyME',
-    description: 'Stock, ventas, cuotas y facturación en un solo lugar. Pensado para comercios de indumentaria en Argentina.',
+    title: 'Stockio — Gestión de stock, ventas y cuotas para PyMEs',
+    description: 'Stock, ventas, cuotas y facturación AFIP en un solo lugar para PyMEs de indumentaria en Argentina. Probalo 30 días gratis sin permanencia.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Stockio — Gestión inteligente para tu PyME',
+        alt: 'Stockio — Gestión de stock, ventas y cuotas para PyMEs',
         type: 'image/png',
       },
     ],
@@ -55,8 +55,8 @@ export const metadata: Metadata = {
   // Twitter / X — usa la misma imagen pero con su propia card
   twitter: {
     card: 'summary_large_image',
-    title: 'Stockio — Gestión inteligente para tu PyME',
-    description: 'Stock, ventas, cuotas y facturación en un solo lugar.',
+    title: 'Stockio — Gestión de stock, ventas y cuotas para PyMEs',
+    description: 'Stock, ventas, cuotas y facturación AFIP en un solo lugar para PyMEs de indumentaria en Argentina.',
     images: ['/og-image.png'],
   },
   // SEO basico
