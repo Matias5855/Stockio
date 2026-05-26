@@ -1,0 +1,241 @@
+# Backup diario de Supabase con archivo mensual permanente.
+#
+# Que hace:
+#  - Diariamente a las 03:00 UTC (00:00 Argentina):
+#      1. pg_dump completo (raw SQL, restaurable) -> artifact 30 dias
+#      2. Export de cada tabla como CSV (legible en Excel) -> artifact 30 dias
+#  - El dia 1 de cada mes (y en cada run manual):
+#      3. Ademas pushea el dump + CSVs a un repo privado separado
+#         Stockio-backups, versionado para siempre.
+#
+# Setup obligatorio (una sola vez):
+#
+#  A) Secret SUPABASE_DB_URL en este repo (Stockio):
+#     Connection string del Session pooler (puerto 6543) de Supabase.
+#     Settings -> Secrets and variables -> Actions -> New repository secret.
+#
+#  B) Repo privado de backups:
+#     Crear https://github.com/Matias5855/Stockio-backups (privado, vacio).
+#
+#  C) Personal Access Token (PAT) con scope "repo":
+#     https://github.com/settings/tokens?type=beta (fine-grained recomendado)
+#     -> "Generate new token"
+#     -> Resource owner: Matias5855
+#     -> Repository access: "Only select repositories" -> Stockio-backups
+#     -> Repository permissions -> Contents: Read and write
+#     -> Generate token, copiar el token (empieza con github_pat_...)
+#
+#  D) Secret BACKUPS_REPO_PAT en este repo (Stockio):
+#     Pegar el token del paso C.
+
+name: Supabase Backup
+
+on:
+  schedule:
+    # 03:00 UTC = 00:00 Argentina (UTC-3)
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # Permite correr manual desde la UI
+
+# Lista de tablas a exportar como CSV. Si agregamos tablas nuevas al modelo,
+# sumarlas aca. Las que no existan en la DB se saltean sin error.
+env:
+  TABLAS_CSV: >-
+    organizations profiles productos ventas venta_items
+    movimientos cuotas_ventas cuota_pagos archivos
+    suscripciones planes invitaciones historial notificaciones
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Instalar cliente Postgres 16
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Verificar secrets
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Falta el secret SUPABASE_DB_URL"
+            exit 1
+          fi
+
+      - name: Definir nombres y fechas
+        id: meta
+        run: |
+          STAMP=$(date -u +"%Y-%m-%d_%H%M")
+          DIA=$(date -u +"%d")
+          ANIO=$(date -u +"%Y")
+          MES=$(date -u +"%m")
+
+          echo "stamp=$STAMP" >> $GITHUB_OUTPUT
+          echo "anio=$ANIO" >> $GITHUB_OUTPUT
+          echo "mes=$MES" >> $GITHUB_OUTPUT
+          echo "sql_file=stockio-backup-${STAMP}.sql.gz" >> $GITHUB_OUTPUT
+          echo "csv_zip=stockio-csv-${STAMP}.zip" >> $GITHUB_OUTPUT
+
+          # Es archivo mensual si: es el dia 1 del mes, o se corrio manual.
+          if [ "$DIA" = "01" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "es_mensual=true" >> $GITHUB_OUTPUT
+          else
+            echo "es_mensual=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generar dump SQL completo
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # --no-owner / --no-acl: portable, restaurable en cualquier Postgres
+          # --clean --if-exists: idempotente al restaurar (drop antes de create)
+          # gzip -9: maxima compresion (~10x menos)
+          pg_dump "$DB_URL" \
+            --no-owner \
+            --no-acl \
+            --clean \
+            --if-exists \
+            --quote-all-identifiers \
+          | gzip -9 > "${{ steps.meta.outputs.sql_file }}"
+
+          SIZE=$(du -h "${{ steps.meta.outputs.sql_file }}" | cut -f1)
+          echo "✓ Dump SQL: $SIZE"
+
+      - name: Exportar cada tabla como CSV
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p csv
+          OK=0
+          SKIP=0
+
+          for TABLA in $TABLAS_CSV; do
+            # \copy en vez de COPY porque no requiere superuser
+            # 2>/dev/null silencia el error si la tabla no existe
+            if psql "$DB_URL" -c "\copy public.${TABLA} TO 'csv/${TABLA}.csv' WITH CSV HEADER" 2>/dev/null; then
+              ROWS=$(wc -l < "csv/${TABLA}.csv")
+              echo "  ✓ ${TABLA}: $((ROWS - 1)) filas"
+              OK=$((OK + 1))
+            else
+              echo "  - ${TABLA}: no existe o sin permisos (skip)"
+              SKIP=$((SKIP + 1))
+            fi
+          done
+
+          echo ""
+          echo "Tablas exportadas: $OK · Skipped: $SKIP"
+
+          # README dentro del zip para futuros uso (yo del futuro / un auditor)
+          cat > csv/README.txt <<EOF
+          Backup CSV de Stockio - ${{ steps.meta.outputs.stamp }}
+
+          Cada archivo es una tabla de la base de datos exportada en CSV con
+          encabezados. Se pueden abrir directamente con Excel, Google Sheets
+          o LibreOffice.
+
+          Para restaurar la base completa usar el archivo .sql.gz que va
+          junto a este zip:
+            gunzip stockio-backup-FECHA.sql.gz
+            psql "postgresql://..." < stockio-backup-FECHA.sql
+
+          Encoding: UTF-8
+          Separador: coma
+          Quote: comilla doble
+          EOF
+
+          zip -r "${{ steps.meta.outputs.csv_zip }}" csv/
+          SIZE=$(du -h "${{ steps.meta.outputs.csv_zip }}" | cut -f1)
+          echo "✓ CSV zip: $SIZE"
+
+      - name: Subir SQL como artifact (30 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.sql_file }}
+          path: ${{ steps.meta.outputs.sql_file }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Subir CSV zip como artifact (30 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.csv_zip }}
+          path: ${{ steps.meta.outputs.csv_zip }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Archivar en repo privado permanente
+        if: steps.meta.outputs.es_mensual == 'true'
+        env:
+          PAT: ${{ secrets.BACKUPS_REPO_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::warning::No esta configurado BACKUPS_REPO_PAT - skipping archivo mensual."
+            echo "Para activarlo: ver instrucciones en el header del workflow."
+            exit 0
+          fi
+
+          ANIO="${{ steps.meta.outputs.anio }}"
+          MES="${{ steps.meta.outputs.mes }}"
+          DESTINO="${ANIO}/${MES}"
+
+          # Clone del repo de backups con auth via PAT en la URL
+          git clone "https://x-access-token:${PAT}@github.com/Matias5855/Stockio-backups.git" backup-repo
+          cd backup-repo
+
+          mkdir -p "${DESTINO}"
+          cp "../${{ steps.meta.outputs.sql_file }}" "${DESTINO}/"
+          cp "../${{ steps.meta.outputs.csv_zip }}" "${DESTINO}/"
+
+          # README del root con instrucciones de restauracion (idempotente)
+          if [ ! -f README.md ]; then
+            cat > README.md <<'EOF'
+          # Stockio - Backups Permanentes
+
+          Cada carpeta es un mes (`YYYY/MM/`). Adentro encontras:
+
+          - `stockio-backup-FECHA.sql.gz` - dump completo Postgres (restaurable)
+          - `stockio-csv-FECHA.zip` - CSV por tabla (legible con Excel)
+
+          ## Restaurar la base completa
+
+          \`\`\`bash
+          gunzip stockio-backup-FECHA.sql.gz
+          psql "postgresql://USUARIO:PASS@HOST:PORT/postgres" < stockio-backup-FECHA.sql
+          \`\`\`
+
+          ## Ver datos de una tabla puntual
+
+          1. Descomprimir el `.zip`
+          2. Abrir el `.csv` deseado con Excel / LibreOffice / Google Sheets
+
+          Generado automaticamente por `.github/workflows/supabase-backup.yml`
+          en el repo principal de Stockio.
+          EOF
+            git add README.md
+          fi
+
+          git config user.name "Stockio Backup Bot"
+          git config user.email "backup@stockio.com.ar"
+          git add "${DESTINO}"
+          git commit -m "backup: ${{ steps.meta.outputs.stamp }}"
+          git push
+
+          echo "✓ Archivado en Stockio-backups/${DESTINO}/"
+
+      - name: Resumen
+        run: |
+          echo "## ✓ Backup completado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Archivos generados:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ steps.meta.outputs.sql_file }}\` - dump SQL completo" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ steps.meta.outputs.csv_zip }}\` - CSVs por tabla (Excel)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Disponibles en:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifacts de este run (abajo) - 30 dias" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.meta.outputs.es_mensual }}" = "true" ]; then
+            echo "- Repo Stockio-backups, carpeta \`${{ steps.meta.outputs.anio }}/${{ steps.meta.outputs.mes }}/\` - permanente" >> $GITHUB_STEP_SUMMARY
+          fi
