@@ -138,6 +138,46 @@ export default function AdminPage() {
     )
   }
 
+  // Eliminar org — accion DESTRUCTIVA e IRREVERSIBLE.
+  // Triple guard: confirm() inicial -> prompt pidiendo escribir el nombre exacto ->
+  // confirm() final. Solo asi se llama al endpoint.
+  const eliminar = async (org: Org) => {
+    const warn = `⚠️ ELIMINAR PERMANENTEMENTE "${org.name}"\n\nEsto borra:\n• Todos los productos\n• Todas las ventas e items\n• Todos los movimientos de caja\n• Todas las cuotas y pagos\n• Todos los archivos (metadata)\n• Todos los usuarios vinculados\n• Toda la suscripción e historial\n\nNO se puede deshacer.\n\n¿Continuar?`
+    if (!confirm(warn)) return
+
+    const tipeado = prompt(`Para confirmar, escribí el nombre exacto del negocio:\n\n${org.name}`)
+    if (tipeado === null) return  // cancelo el prompt
+    if (tipeado !== org.name) {
+      alert(`El nombre no coincide.\nEscribiste: "${tipeado}"\nEsperaba: "${org.name}"\n\nAcción cancelada.`)
+      return
+    }
+
+    if (!confirm(`Última confirmación: eliminar "${org.name}" y TODOS sus datos. ¿Seguro?`)) return
+
+    setActionLoading(org.id + 'eliminar')
+    try {
+      const res = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'eliminar_organizacion',
+          org_id: org.id,
+          confirm_name: org.name,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Error eliminando')
+      if (json.warnings?.length) {
+        alert(`Org eliminada con advertencias:\n\n${json.warnings.join('\n')}`)
+      }
+      await cargar()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error inesperado')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   // ---------- Estilos ----------
   const wrap: React.CSSProperties = {
     minHeight: '100vh', background: '#F0FDFA',
@@ -366,6 +406,12 @@ export default function AdminPage() {
                             disabled={!!actionLoading || o.estado === 'cancelada'}
                             style={{ ...actionBtn, background: '#FEE2E2', color: '#991B1B', borderColor: '#FECACA' }}
                           >Cancelar</button>
+                          <button
+                            onClick={() => eliminar(o)}
+                            disabled={!!actionLoading}
+                            title="Eliminar org permanentemente (irreversible)"
+                            style={{ ...actionBtn, background: '#991B1B', color: '#FFFFFF', borderColor: '#7F1D1D' }}
+                          >🗑</button>
                         </div>
                       </td>
                     </tr>

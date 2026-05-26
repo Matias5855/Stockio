@@ -18,7 +18,27 @@ export const dynamic = 'force-dynamic'
 type ExtenderTrialBody = { action: 'extender_trial'; org_id: string; dias: number }
 type CambiarPlanBody = { action: 'cambiar_plan'; org_id: string; plan_id: 'normal' | 'premium' }
 type CancelarBody = { action: 'cancelar_suscripcion'; org_id: string }
-type ActionBody = ExtenderTrialBody | CambiarPlanBody | CancelarBody
+type EliminarBody = { action: 'eliminar_organizacion'; org_id: string; confirm_name: string }
+type ActionBody = ExtenderTrialBody | CambiarPlanBody | CancelarBody | EliminarBody
+
+// Tablas con FK a organizations.id. El orden importa: primero hijas, despues
+// padres. Si en el futuro se agrega una tabla mas, agregarla aca.
+// Las que dependen de ventas (venta_items, cuota_pagos) las borramos antes
+// que ventas/cuotas_ventas porque el FK es a esas, no a org_id directo.
+const TABLAS_DEPENDIENTES_DE_VENTAS = ['venta_items'] as const
+const TABLAS_DEPENDIENTES_DE_CUOTAS = ['cuota_pagos'] as const
+const TABLAS_CON_ORG_ID = [
+  'ventas',
+  'cuotas_ventas',
+  'productos',
+  'movimientos',
+  'archivos',
+  'historial',
+  'invitaciones',
+  'notificaciones',
+  'suscripciones',
+  'profiles',  // Esto desvincula al user de la org, pero NO borra auth.users
+] as const
 
 export async function POST(req: NextRequest) {
   try {
@@ -72,6 +92,72 @@ export async function POST(req: NextRequest) {
         .from('suscripciones').update({ estado: 'cancelada' }).eq('org_id', body.org_id)
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true })
+    }
+
+    if (body.action === 'eliminar_organizacion') {
+      // Guard fuerte: el cliente tiene que mandar el name exacto de la org.
+      // Esto evita borrados accidentales con el wrong org_id.
+      const { data: org, error: getErr } = await admin
+        .from('organizations').select('id, name').eq('id', body.org_id).single()
+      if (getErr || !org) {
+        return NextResponse.json({ error: 'Organizacion no encontrada' }, { status: 404 })
+      }
+      if ((org.name ?? '') !== body.confirm_name) {
+        return NextResponse.json({
+          error: 'El nombre de confirmacion no coincide con el de la organizacion',
+        }, { status: 400 })
+      }
+
+      const errores: string[] = []
+
+      // 1. Borrar venta_items asociadas a ventas de esta org
+      // Hacemos un select primero porque venta_items no tiene org_id directo.
+      const { data: ventasIds } = await admin
+        .from('ventas').select('id').eq('org_id', body.org_id)
+      const ventaIdList = (ventasIds ?? []).map((v: { id: string }) => v.id)
+      if (ventaIdList.length > 0) {
+        for (const tabla of TABLAS_DEPENDIENTES_DE_VENTAS) {
+          const { error } = await admin.from(tabla).delete().in('venta_id', ventaIdList)
+          if (error && !error.message.includes('does not exist')) {
+            errores.push(`${tabla}: ${error.message}`)
+          }
+        }
+      }
+
+      // 2. Idem cuota_pagos
+      const { data: cuotasIds } = await admin
+        .from('cuotas_ventas').select('id').eq('org_id', body.org_id)
+      const cuotaIdList = (cuotasIds ?? []).map((c: { id: string }) => c.id)
+      if (cuotaIdList.length > 0) {
+        for (const tabla of TABLAS_DEPENDIENTES_DE_CUOTAS) {
+          const { error } = await admin.from(tabla).delete().in('cuota_id', cuotaIdList)
+          if (error && !error.message.includes('does not exist')) {
+            errores.push(`${tabla}: ${error.message}`)
+          }
+        }
+      }
+
+      // 3. Borrar todas las tablas con org_id directo
+      // Si alguna tabla no existe (ej: notificaciones no implementada), no abortamos.
+      for (const tabla of TABLAS_CON_ORG_ID) {
+        const { error } = await admin.from(tabla).delete().eq('org_id', body.org_id)
+        if (error && !error.message.includes('does not exist')) {
+          errores.push(`${tabla}: ${error.message}`)
+        }
+      }
+
+      // 4. Borrar la organization
+      const { error: orgErr } = await admin.from('organizations').delete().eq('id', body.org_id)
+      if (orgErr) {
+        return NextResponse.json({
+          error: `No se pudo borrar la org: ${orgErr.message}. Errores previos: ${errores.join('; ')}`,
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        ok: true,
+        warnings: errores.length > 0 ? errores : undefined,
+      })
     }
 
     return NextResponse.json({ error: 'action no reconocida' }, { status: 400 })
