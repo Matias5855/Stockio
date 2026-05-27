@@ -17,84 +17,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { escapeHtml } from '@/lib/schemas'
+import { render } from '@react-email/components'
 import { from as emailFrom, replyTo } from '@/lib/email'
+import TrialDay23Email from '@/emails/TrialDay23Email'
+import TrialDay28Email from '@/emails/TrialDay28Email'
+import TrialExpiredEmail from '@/emails/TrialExpiredEmail'
 
 export const dynamic = 'force-dynamic'
 
 type AvisoTipo = 'dia23' | 'dia28'
 
 const ASUNTOS: Record<AvisoTipo, string> = {
-  dia23: 'Te quedan 7 días de prueba en Stockio 🎁',
-  dia28: '⚠ Tu prueba de Stockio termina en 2 días',
+  dia23: 'Te quedan 7 días de prueba en Stockio',
+  dia28: 'Tu prueba de Stockio termina en 2 días',
 }
 
-function buildEmailHtml(opts: {
+// Wrapper que devuelve el HTML segun el tipo. Encapsula la eleccion del
+// componente React Email para que procesarAvisos quede limpio.
+async function buildEmail(opts: {
   tipo: AvisoTipo
   nombre: string
   negocio: string
-  trialFinStr: string
   appUrl: string
-}): string {
-  const { tipo, nombre, negocio, trialFinStr, appUrl } = opts
-  const esUrgente = tipo === 'dia28'
-
-  const titulo = esUrgente
-    ? '⚠ Tu prueba termina en 2 días'
-    : '🎁 Te quedan 7 días de prueba'
-
-  const mensaje = esUrgente
-    ? `En 2 días termina tu prueba gratuita. Si tenés tarjeta vinculada, te cobramos automáticamente y seguís sin interrupciones. Si todavía no la pusiste, entrá ahora a configuración para no perder el acceso.`
-    : `Te queremos recordar que tu prueba gratuita de Stockio termina el ${trialFinStr}. Si tenés tarjeta vinculada, el cobro es automático. Si no, podés agregarla cuando quieras desde Configuración → Suscripción.`
-
-  const ctaLabel = esUrgente ? 'Agregar tarjeta ahora →' : 'Ir a Stockio →'
-  const ctaUrl = `${appUrl}/dashboard`
-  const accentColor = esUrgente ? '#DC2626' : '#0D9488'
-
-  return `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#F0FDFA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:560px;margin:40px auto;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(4,47,46,0.08);">
-
-    <div style="background:#0D9488;padding:32px 40px;">
-      <h1 style="color:#FFFFFF;margin:0;font-size:28px;font-weight:800;letter-spacing:-0.02em;">Stockio</h1>
-      <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px;">Gestión inteligente para tu negocio</p>
-    </div>
-
-    <div style="padding:40px;">
-      <h2 style="color:#042F2E;margin:0 0 8px;font-size:22px;font-weight:700;">${titulo}</h2>
-      <p style="color:#1C4542;font-size:15px;line-height:1.6;margin:0 0 24px;">
-        Hola <strong>${nombre}</strong>, <br><br>
-        ${mensaje}
-      </p>
-
-      <div style="background:${esUrgente ? '#FFF1F2' : '#F0FDFA'};border:1px solid ${esUrgente ? '#FECDD3' : '#CCFBF1'};border-radius:12px;padding:18px 22px;margin-bottom:28px;">
-        <p style="margin:0 0 4px;font-size:12px;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Tu negocio</p>
-        <p style="margin:0 0 10px;font-size:16px;font-weight:700;color:#042F2E;">${negocio}</p>
-        <p style="margin:0;font-size:13px;color:#6B7280;">Prueba gratis hasta el <strong style="color:${accentColor};">${trialFinStr}</strong></p>
-      </div>
-
-      <div style="text-align:center;margin:28px 0 24px;">
-        <a href="${ctaUrl}" style="display:inline-block;background:${accentColor};color:#FFFFFF;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">
-          ${ctaLabel}
-        </a>
-      </div>
-
-      <p style="color:#6B7280;font-size:13px;text-align:center;margin:0;line-height:1.6;">
-        ¿Necesitás ayuda? Respondé este email y te atendemos.<br>
-        <strong style="color:#0D9488;">Equipo Stockio</strong>
-      </p>
-    </div>
-
-    <div style="background:#F0FDFA;padding:20px 40px;text-align:center;border-top:1px solid #CCFBF1;">
-      <p style="margin:0;font-size:12px;color:#6B7280;">
-        © 2026 Stockio · Hecho en Chaco, Argentina 🇦🇷
-      </p>
-    </div>
-  </div>
-</body>
-</html>`
+}): Promise<string> {
+  const Component = opts.tipo === 'dia23' ? TrialDay23Email : TrialDay28Email
+  return render(Component({
+    nombre: opts.nombre,
+    negocio: opts.negocio,
+    appUrl: opts.appUrl,
+  }))
 }
 
 // Hace lo mismo para ambos tipos de aviso, parametrizado por tipo y rango de
@@ -149,16 +100,18 @@ async function procesarAvisos(opts: {
       if (!email) { fallidos++; continue }
 
       const orgData = org as { name: string } | null
-      const nombre = escapeHtml((ownerData.full_name ?? 'hola').split(' ')[0])
-      const negocio = escapeHtml(orgData?.name ?? 'tu negocio')
-      const trialFinStr = new Date(s.trial_fin).toLocaleDateString('es-AR')
+      // React Email escapa automaticamente — no necesitamos escapeHtml manual.
+      const nombre = (ownerData.full_name ?? 'hola').split(' ')[0]
+      const negocio = orgData?.name ?? 'tu negocio'
+
+      const html = await buildEmail({ tipo, nombre, negocio, appUrl })
 
       await resend.emails.send({
         from: emailFrom('Stockio'),
         replyTo: replyTo(),
         to: email,
         subject: ASUNTOS[tipo],
-        html: buildEmailHtml({ tipo, nombre, negocio, trialFinStr, appUrl }),
+        html,
       })
 
       const updatePayload: Record<string, string> = { [columna]: new Date().toISOString() }
@@ -169,6 +122,86 @@ async function procesarAvisos(opts: {
       enviados++
     } catch (err) {
       console.error(`[Cron trial-emails ${tipo}] Error en suscripcion ${s.id}:`, err)
+      fallidos++
+    }
+  }
+
+  return { enviados, fallidos }
+}
+
+// Pasa a estado='vencida' las suscripciones cuyo trial_fin ya paso y aun
+// estan en estado='trial', y manda el email TrialExpired. Idempotente via
+// aviso_vencido_enviado_at — si la columna no existe, el catch lo absorbe.
+async function procesarTrialesVencidos(opts: {
+  supabase: SupabaseClient
+  resend: Resend
+  appUrl: string
+}): Promise<{ enviados: number; fallidos: number }> {
+  const { supabase, resend, appUrl } = opts
+  const ahora = new Date().toISOString()
+
+  let candidatos: Array<{ id: string; org_id: string; trial_fin: string }> = []
+  try {
+    const { data, error } = await supabase
+      .from('suscripciones')
+      .select('id, org_id, trial_fin')
+      .eq('estado', 'trial')
+      .lt('trial_fin', ahora)
+      .is('aviso_vencido_enviado_at', null)
+    if (error) throw error
+    candidatos = (data ?? []) as Array<{ id: string; org_id: string; trial_fin: string }>
+  } catch (err) {
+    console.warn('[Cron trial-emails vencidos] Skip (columna ausente?):', err)
+    return { enviados: 0, fallidos: 0 }
+  }
+
+  if (candidatos.length === 0) return { enviados: 0, fallidos: 0 }
+
+  let enviados = 0
+  let fallidos = 0
+
+  for (const s of candidatos) {
+    try {
+      // Marcar vencida antes que nada — si el email falla, igual queda registrado.
+      await supabase.from('suscripciones')
+        .update({ estado: 'vencida' })
+        .eq('id', s.id)
+
+      const { data: org } = await supabase
+        .from('organizations').select('name').eq('id', s.org_id).single()
+      const { data: owner } = await supabase
+        .from('profiles').select('id, full_name')
+        .eq('org_id', s.org_id).eq('role', 'owner').single()
+
+      const ownerData = owner as { id: string; full_name: string | null } | null
+      if (!ownerData) { fallidos++; continue }
+
+      const { data: userInfo } = await supabase.auth.admin.getUserById(ownerData.id)
+      const email = userInfo?.user?.email
+      if (!email) { fallidos++; continue }
+
+      const orgData = org as { name: string } | null
+      const html = await render(TrialExpiredEmail({
+        nombre: (ownerData.full_name ?? 'hola').split(' ')[0],
+        negocio: orgData?.name ?? 'tu negocio',
+        appUrl,
+      }))
+
+      await resend.emails.send({
+        from: emailFrom('Stockio'),
+        replyTo: replyTo(),
+        to: email,
+        subject: 'Tu prueba de Stockio terminó',
+        html,
+      })
+
+      await supabase.from('suscripciones')
+        .update({ aviso_vencido_enviado_at: new Date().toISOString() })
+        .eq('id', s.id)
+
+      enviados++
+    } catch (err) {
+      console.error('[Cron trial-emails vencidos] Error:', err)
       fallidos++
     }
   }
@@ -210,10 +243,16 @@ export async function POST(req: NextRequest) {
       supabase, resend, appUrl,
     })
 
+    // Trial vencido: detectamos los que vencieron en las ultimas 24h,
+    // los pasamos a estado='vencida' y mandamos el email final.
+    // Requiere columna aviso_vencido_enviado_at — si no existe, falla silencioso.
+    const vencidos = await procesarTrialesVencidos({ supabase, resend, appUrl })
+
     return NextResponse.json({
       ok: true,
       dia23,
       dia28,
+      vencidos,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido'

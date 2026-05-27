@@ -9,9 +9,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "email": "email dev --dir src/emails --port 3001"
   },
   "dependencies": {
+    "@react-email/components": "^1.0.12",
     "@sentry/nextjs": "^10.53.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
@@ -26,6 +28,7 @@
     "node-forge": "^1.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-email": "^6.5.0",
     "recharts": "^3.8.1",
     "resend": "^6.12.2",
     "sharp": "^0.34.5",

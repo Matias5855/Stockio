@@ -3,12 +3,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import { render } from '@react-email/components'
 import { crearARCAServiceCon, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
 import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
-import { parseBody, FacturaInputSchema, escapeHtml, ValidationError } from '@/lib/schemas'
+import { parseBody, FacturaInputSchema, ValidationError } from '@/lib/schemas'
 import { decryptSecret } from '@/lib/crypto'
 import { from as emailFrom, replyTo } from '@/lib/email'
+import SaleTicketEmail from '@/emails/SaleTicketEmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,33 +126,22 @@ export async function POST(req: NextRequest) {
 
     const pdfBase64 = await ticketBase64(ticketData)
 
-    // 5. Enviar email — escapamos todo lo que viene del usuario
+    // 5. Enviar email con el ticket adjunto. React Email escapa automaticamente
+    // todo el contenido interpolado, asi que no hace falta el escapeHtml manual.
     if (email_cliente) {
-      const orgNameSafe = escapeHtml(org?.name ?? 'Mi Negocio')
-      const clienteSafe = escapeHtml(venta.cliente_nombre ?? 'Cliente')
-      const totalSafe = escapeHtml(Number(venta.total).toLocaleString('es-AR'))
-      const caeSafe = cae ? escapeHtml(cae) : ''
-      const caeVtoSafe = cae_vencimiento ? escapeHtml(cae_vencimiento) : ''
-      const nroFacturaSafe = escapeHtml(venta.nro_factura)
+      const html = await render(SaleTicketEmail({
+        orgName: org?.name ?? 'Mi Negocio',
+        ventaNumero: venta.nro_factura,
+        total: Number(venta.total) || 0,
+        clienteNombre: venta.cliente_nombre ?? undefined,
+      }))
 
       await resend.emails.send({
-        from: emailFrom(orgNameSafe),
+        from: emailFrom(org?.name ?? 'Stockio'),
         replyTo: replyTo(),
         to: email_cliente,
-        subject: `Tu comprobante ${nroFacturaSafe}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto;">
-            <div style="background: #7C6FE0; padding: 24px; border-radius: 12px 12px 0 0;">
-              <h2 style="color: white; margin: 0;">${orgNameSafe}</h2>
-            </div>
-            <div style="background: #f9f9f9; padding: 24px; border-radius: 0 0 12px 12px; border: 1px solid #eee;">
-              <p style="color: #333;">Hola <strong>${clienteSafe}</strong>,</p>
-              <p style="color: #555;">Adjuntamos el comprobante de tu compra por <strong>$${totalSafe}</strong>.</p>
-              ${caeSafe ? `<p style="color: #555; font-size: 12px;">CAE: ${caeSafe} | Vto: ${caeVtoSafe}</p>` : ''}
-              <p style="color: #999; font-size: 11px; margin-top: 24px;">Generado por Stockio</p>
-            </div>
-          </div>
-        `,
+        subject: `Tu comprobante ${venta.nro_factura}`,
+        html,
         attachments: [{
           filename: `${venta.nro_factura}.pdf`,
           content: pdfBase64,

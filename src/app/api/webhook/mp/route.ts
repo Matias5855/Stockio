@@ -10,7 +10,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
+import { render } from '@react-email/components'
 import { verifyMpSignature } from '@/lib/mpSignature'
+import { from as emailFrom, replyTo } from '@/lib/email'
+import SubscriptionActivatedEmail from '@/emails/SubscriptionActivatedEmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -129,12 +133,63 @@ export async function POST(req: NextRequest) {
       // por eso no se podia matchear por ese campo. Aprovechamos para guardarlo.
       const orgId = susc.external_reference
       if (orgId) {
+        const nuevoEstado = estadoMap[susc.status] ?? 'vencida'
+
+        // Leer estado anterior para detectar transicion -> activa
+        const { data: previa } = await supabase
+          .from('suscripciones').select('estado, plan_id')
+          .eq('org_id', orgId).single()
+
         await supabase.from('suscripciones')
           .update({
-            estado: estadoMap[susc.status] ?? 'vencida',
+            estado: nuevoEstado,
             mp_suscripcion_id: data.id,
           })
           .eq('org_id', orgId)
+
+        // Si recien se activa (transicion trial/pausada/vencida -> activa)
+        // mandamos email de confirmacion. Si ya estaba activa no mandamos
+        // de nuevo (evita duplicados en eventos posteriores de MP).
+        if (nuevoEstado === 'activa' && previa?.estado !== 'activa') {
+          try {
+            const { data: org } = await supabase
+              .from('organizations').select('name').eq('id', orgId).single()
+            const { data: owner } = await supabase
+              .from('profiles').select('id, full_name')
+              .eq('org_id', orgId).eq('role', 'owner').single()
+
+            if (owner && org) {
+              const ownerTyped = owner as { id: string; full_name: string | null }
+              const { data: userInfo } = await supabase.auth.admin.getUserById(ownerTyped.id)
+              const ownerEmail = userInfo?.user?.email
+              const planId = (previa?.plan_id === 'premium' ? 'premium' : 'normal') as 'normal' | 'premium'
+
+              if (ownerEmail) {
+                const resend = new Resend(process.env.RESEND_API_KEY)
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://stockio.com.ar'
+                const orgTyped = org as { name: string }
+
+                const html = await render(SubscriptionActivatedEmail({
+                  nombre: (ownerTyped.full_name ?? 'hola').split(' ')[0],
+                  negocio: orgTyped.name,
+                  planId,
+                  appUrl,
+                }))
+
+                await resend.emails.send({
+                  from: emailFrom('Stockio'),
+                  replyTo: replyTo(),
+                  to: ownerEmail,
+                  subject: '¡Suscripción activada en Stockio!',
+                  html,
+                })
+              }
+            }
+          } catch (emailErr) {
+            // Si falla el email, no abortar el webhook — la suscripcion ya quedo activa.
+            console.error('[Webhook MP] No se pudo enviar email de activacion:', emailErr)
+          }
+        }
       }
     }
 
