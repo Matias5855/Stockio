@@ -1,0 +1,56 @@
+# CI de Stockio — valida el codigo antes de que llegue a produccion.
+#
+# Vercel es el CD (deploya solo al pushear a main). Este workflow es CI puro:
+# corre los checks rapidos que atrapan bugs antes del deploy.
+#
+# Gates BLOQUEANTES (si fallan, el check sale rojo):
+#   - typecheck: tsc --noEmit
+#   - test: vitest run
+#
+# Paso INFORMATIVO (continue-on-error, no bloquea):
+#   - lint: eslint. Hoy hay ~29 errores pre-existentes (reglas nuevas de
+#     react-hooks). Lo dejamos visible pero no bloqueante hasta limpiar esa
+#     deuda. Cuando los errores lleguen a 0, sacar el continue-on-error.
+#
+# No corremos `next build` aca a proposito: Vercel ya lo hace al deployar y
+# requiere env vars + token de Sentry. tsc + tests cubren el grueso sin eso.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancela runs viejos del mismo branch/PR si se pushea algo nuevo (ahorra minutos)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Typecheck (bloqueante)
+        run: npx tsc --noEmit
+
+      - name: Tests (bloqueante)
+        run: npm test
+
+      - name: Lint (informativo - no bloquea)
+        run: npm run lint
+        continue-on-error: true
