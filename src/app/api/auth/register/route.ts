@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     // Rate limit por IP: 5 registros cada 10 minutos.
     // Combinado con el captcha de Supabase (si esta activado) evita bots.
     const ip = getClientIp(req)
-    const rl = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000)
+    const rl = await rateLimit(`register:${ip}`, 5, 10 * 60 * 1000)
     if (!rl.ok) {
       return NextResponse.json(
         { error: 'Demasiados intentos. Esperá unos minutos.' },

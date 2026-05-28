@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   try {
     // Rate limit: 5 intentos por IP cada 10 min
     const ip = getClientIp(req)
-    const rl = rateLimit(`aceptar:${ip}`, 5, 10 * 60 * 1000)
+    const rl = await rateLimit(`aceptar:${ip}`, 5, 10 * 60 * 1000)
     if (!rl.ok) {
       return NextResponse.json(
         { error: 'Demasiados intentos. Esperá unos minutos.' },
