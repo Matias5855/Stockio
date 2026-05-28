@@ -16,7 +16,7 @@
  * en los 3 configs de Sentry (client, server, edge).
  */
 
-import type { ErrorEvent, EventHint } from '@sentry/nextjs'
+import type { ErrorEvent } from '@sentry/nextjs'
 
 // Patterns de strings que tenemos que redactar donde sea que aparezcan
 const SENSITIVE_PATTERNS: ReadonlyArray<RegExp> = [
@@ -86,7 +86,7 @@ function redactRecord(record: Record<string, unknown> | undefined): void {
  * y lo retorna. Si algo falla en la redaccion, dropea el evento entero
  * (mejor perder el reporte que filtrar un token).
  */
-export function redactSensitive(event: ErrorEvent, _hint?: EventHint): ErrorEvent | null {
+export function redactSensitive(event: ErrorEvent): ErrorEvent | null {
   try {
     // Headers
     if (event.request?.headers) {

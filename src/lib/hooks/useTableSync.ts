@@ -62,8 +62,12 @@ export function useTableSync<T extends { id: string }>(opts: UseTableSyncOptions
   // del useEffect. Esto evita el loop: opts es objeto literal -> nueva identidad cada
   // render -> useCallback se invalida -> useEffect se re-corre -> realtime resubscribe
   // -> fetch -> setData -> re-render -> loop.
+  // Actualizamos el ref en un effect (no durante el render) para cumplir
+  // react-hooks/refs. Corre despues de cada render, antes de los callbacks async.
   const optsRef = useRef(opts)
-  optsRef.current = opts
+  useEffect(() => {
+    optsRef.current = opts
+  })
 
   const supabase = useMemo(() => createClient(), [])
   const [data, setData] = useState<T[]>([])

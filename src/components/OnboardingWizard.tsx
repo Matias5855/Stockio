@@ -186,31 +186,29 @@ export default function OnboardingWizard({ orgId, initialOrgName, onDone }: Prop
   }
 
   // ---------- Header con stepper ----------
-  const Stepper = () => {
-    if (paso === 4) return null
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[1, 2, 3].map((n) => (
-            <div key={n} style={{
-              width: 32, height: 4, borderRadius: 2,
-              background: n <= paso ? COLORS.primary : '#E5E7EB',
-              transition: 'background 0.2s ease',
-            }} />
-          ))}
-        </div>
-        <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>
-          Paso {paso} de 3
-        </span>
+  // JSX inline (no componente) para no recrear un componente en cada render.
+  const stepper = paso === 4 ? null : (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {[1, 2, 3].map((n) => (
+          <div key={n} style={{
+            width: 32, height: 4, borderRadius: 2,
+            background: n <= paso ? COLORS.primary : '#E5E7EB',
+            transition: 'background 0.2s ease',
+          }} />
+        ))}
       </div>
-    )
-  }
+      <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>
+        Paso {paso} de 3
+      </span>
+    </div>
+  )
 
   // ---------- Renderizado por paso ----------
   return (
     <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="onb-title">
       <div style={card}>
-        <Stepper />
+        {stepper}
 
         {paso === 1 && (
           <>

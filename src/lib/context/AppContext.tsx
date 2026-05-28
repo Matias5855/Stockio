@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 
 type AppContextType = {
   orgId: string | null
-  orgData: any | null
+  orgData: Record<string, unknown> | null
   userId: string | null
   role: string
   plan: string
@@ -30,9 +30,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const load = useCallback(async () => {
     try {
-      // Intentar desde cache primero
-      const cachedOrgId = localStorage.getItem('stk_org_id')
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setState(s => ({ ...s, loading: false })); return }
 
@@ -51,11 +48,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .select('*, suscripciones(plan_id, estado, trial_fin)')
         .eq('id', orgId).single()
 
-      const planId = (org as any)?.suscripciones?.[0]?.plan_id ?? 'normal'
+      const planId = (org as { suscripciones?: Array<{ plan_id?: string }> } | null)
+        ?.suscripciones?.[0]?.plan_id ?? 'normal'
 
       setState({
         orgId,
-        orgData: org,
+        orgData: org as Record<string, unknown> | null,
         userId: user.id,
         role: profile.role,
         plan: planId,

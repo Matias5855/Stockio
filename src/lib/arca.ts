@@ -225,7 +225,7 @@ export class ARCAService {
     if (!detalle) throw new Error('ARCA: Sin respuesta del servicio')
 
     if (detalle.Resultado === 'R') {
-      const obs = detalle.Observaciones?.Obs?.map((o: any) => o.Msg).join(', ')
+      const obs = detalle.Observaciones?.Obs?.map((o: { Msg: string }) => o.Msg).join(', ')
       throw new Error(`ARCA rechazó la factura: ${obs}`)
     }
 
@@ -234,7 +234,7 @@ export class ARCAService {
       cae_vencimiento: detalle.CAEFchVto,
       nro_comprobante: nroComprobante,
       resultado: detalle.Resultado,
-      observaciones: detalle.Observaciones?.Obs?.map((o: any) => o.Msg).join(', '),
+      observaciones: detalle.Observaciones?.Obs?.map((o: { Msg: string }) => o.Msg).join(', '),
     }
   }
 }

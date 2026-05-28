@@ -1,6 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 
+// BarcodeDetector es una API del browser que TS no incluye en su lib DOM.
+// Definimos el minimo que usamos para no recurrir a `any`.
+type BarcodeDetectorLike = {
+  detect: (source: CanvasImageSource) => Promise<Array<{ rawValue: string }>>
+}
+type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => BarcodeDetectorLike
+
 interface Props {
   onDetected: (code: string) => void
   onClose: () => void
@@ -37,11 +44,12 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
 
         // Intentar BarcodeDetector nativo primero (Chrome Android/Desktop 83+)
         const hasNative = 'BarcodeDetector' in window
-        let detector: any = null
+        let detector: BarcodeDetectorLike | null = null
 
         if (hasNative) {
           try {
-            detector = new (window as any).BarcodeDetector({
+            const Ctor = (window as unknown as { BarcodeDetector: BarcodeDetectorCtor }).BarcodeDetector
+            detector = new Ctor({
               formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a', 'upc_e', 'itf', 'data_matrix'],
             })
           } catch { detector = null }
@@ -100,14 +108,16 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
 
         animFrame = requestAnimationFrame(scan)
 
-      } catch (e: any) {
+      } catch (e: unknown) {
         setStatus('error')
-        if (e.name === 'NotAllowedError') {
+        const name = e instanceof Error ? e.name : ''
+        if (name === 'NotAllowedError') {
           setErrorMsg('Permiso denegado. Hacé click en 🔒 en la barra del navegador → Cámara → Permitir → Recargá la página.')
-        } else if (e.name === 'NotFoundError') {
+        } else if (name === 'NotFoundError') {
           setErrorMsg('No se encontró ninguna cámara en este dispositivo.')
         } else {
-          setErrorMsg('No se pudo acceder a la cámara: ' + (e.message || e.name))
+          const msg = e instanceof Error ? (e.message || e.name) : String(e)
+          setErrorMsg('No se pudo acceder a la cámara: ' + msg)
         }
       }
     }
