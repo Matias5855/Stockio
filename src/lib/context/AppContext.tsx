@@ -63,7 +63,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setState(s => ({ ...s, loading: false }))
     }
-  }, [])
+  }, [supabase])
 
   useEffect(() => { load() }, [load])
 

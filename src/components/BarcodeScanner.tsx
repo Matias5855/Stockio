@@ -129,6 +129,11 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
       cancelAnimationFrame(animFrame)
       streamRef.current?.getTracks().forEach(t => t.stop())
     }
+    // El effect inicializa la camara y debe correr SOLO al montar. Agregar
+    // handleDetected (que se recrea en cada render) reiniciaria el stream de
+    // la camara constantemente. handleDetected lee todo via refs/props, asi
+    // que la version capturada al montar sigue siendo valida.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleDetected = (value: string) => {

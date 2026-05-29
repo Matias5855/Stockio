@@ -6,11 +6,7 @@
 # Gates BLOQUEANTES (si fallan, el check sale rojo):
 #   - typecheck: tsc --noEmit
 #   - test: vitest run
-#
-# Paso INFORMATIVO (continue-on-error, no bloquea):
-#   - lint: eslint. Hoy hay ~29 errores pre-existentes (reglas nuevas de
-#     react-hooks). Lo dejamos visible pero no bloqueante hasta limpiar esa
-#     deuda. Cuando los errores lleguen a 0, sacar el continue-on-error.
+#   - lint: eslint (0 errores tras limpiar la deuda; ahora es gate estricto)
 #
 # No corremos `next build` aca a proposito: Vercel ya lo hace al deployar y
 # requiere env vars + token de Sentry. tsc + tests cubren el grueso sin eso.
@@ -51,6 +47,5 @@ jobs:
       - name: Tests (bloqueante)
         run: npm test
 
-      - name: Lint (informativo - no bloquea)
+      - name: Lint (bloqueante)
         run: npm run lint
-        continue-on-error: true
