@@ -1,6 +1,8 @@
 // Webhook que MP llama cada vez que hay un evento de pago o suscripcion.
-// Configurar en MP Dashboard -> Notificaciones -> Webhooks
-// URL: https://stockflow-indol.vercel.app/api/webhook/mp
+// Configurar en MP Dashboard -> Tus integraciones -> tu app -> Webhooks
+// URL: https://stockio.com.ar/api/webhook/mp
+// Eventos: Pagos + Planes y suscripciones (subscription_preapproval +
+//          subscription_authorized_payment).
 //
 // IMPORTANTE — Seguridad:
 // Este endpoint NO usa auth de usuario, lo expone el proxy.ts como publico.
@@ -15,6 +17,7 @@ import { render } from '@react-email/components'
 import { verifyMpSignature } from '@/lib/mpSignature'
 import { from as emailFrom, replyTo } from '@/lib/email'
 import SubscriptionActivatedEmail from '@/emails/SubscriptionActivatedEmail'
+import PaymentFailedEmail from '@/emails/PaymentFailedEmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -133,61 +136,226 @@ export async function POST(req: NextRequest) {
       // por eso no se podia matchear por ese campo. Aprovechamos para guardarlo.
       const orgId = susc.external_reference
       if (orgId) {
-        const nuevoEstado = estadoMap[susc.status] ?? 'vencida'
+        const incomingId = data.id
+        const mapped = estadoMap[susc.status] ?? 'vencida'
 
-        // Leer estado anterior para detectar transicion -> activa
+        // Leer la fila actual: estado, el preapproval activo (prevId) y el flag
+        // de cancelacion con grace period.
         const { data: previa } = await supabase
-          .from('suscripciones').select('estado, plan_id')
+          .from('suscripciones')
+          .select('estado, plan_id, mp_suscripcion_id, cancelar_al_terminar, periodo_fin')
           .eq('org_id', orgId).single()
 
-        await supabase.from('suscripciones')
-          .update({
-            estado: nuevoEstado,
-            mp_suscripcion_id: data.id,
-          })
-          .eq('org_id', orgId)
+        const prevId = previa?.mp_suscripcion_id ?? null
 
-        // Si recien se activa (transicion trial/pausada/vencida -> activa)
-        // mandamos email de confirmacion. Si ya estaba activa no mandamos
-        // de nuevo (evita duplicados en eventos posteriores de MP).
-        if (nuevoEstado === 'activa' && previa?.estado !== 'activa') {
-          try {
-            const { data: org } = await supabase
-              .from('organizations').select('name').eq('id', orgId).single()
-            const { data: owner } = await supabase
-              .from('profiles').select('id, full_name')
-              .eq('org_id', orgId).eq('role', 'owner').single()
+        if (susc.status === 'authorized') {
+          // ── Nueva suscripcion AUTORIZADA -> pasa a ser la activa ──────
+          // Cancelacion diferida: si esta autorizacion reemplaza a un
+          // preapproval DISTINTO (cambio de plan / actualizar tarjeta /
+          // reactivacion), recien AHORA cancelamos el viejo en MP. Asi, si el
+          // usuario habia abandonado el checkout, su suscripcion anterior
+          // seguia viva y NO perdia la cuenta ni pagaba de nuevo.
+          if (prevId && prevId !== incomingId) {
+            try {
+              await fetch(`https://api.mercadopago.com/preapproval/${prevId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ACCESS_TOKEN}` },
+                body: JSON.stringify({ status: 'cancelled' }),
+              })
+            } catch (e) {
+              console.error('[Webhook MP] No se pudo cancelar preapproval reemplazado:', e)
+            }
+          }
 
-            if (owner && org) {
-              const ownerTyped = owner as { id: string; full_name: string | null }
-              const { data: userInfo } = await supabase.auth.admin.getUserById(ownerTyped.id)
-              const ownerEmail = userInfo?.user?.email
-              const planId = (previa?.plan_id === 'premium' ? 'premium' : 'normal') as 'normal' | 'premium'
+          // plan_id autoritativo desde MP (el "reason" del plan). Si por algun
+          // motivo no viene, mantenemos el plan_id que ya tenia la fila.
+          const reason = typeof susc.reason === 'string' ? susc.reason.toLowerCase() : ''
+          const planMp: 'normal' | 'premium' =
+            reason.includes('premium') ? 'premium'
+            : reason.includes('normal') ? 'normal'
+            : ((previa?.plan_id === 'premium' ? 'premium' : 'normal'))
 
-              if (ownerEmail) {
-                const resend = new Resend(process.env.RESEND_API_KEY)
-                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://stockio.com.ar'
-                const orgTyped = org as { name: string }
+          await supabase.from('suscripciones')
+            .update({
+              estado: 'activa',
+              mp_suscripcion_id: incomingId,
+              plan_id: planMp,
+              cancelar_al_terminar: false,  // re-suscribio: limpiar cancelacion pendiente
+            })
+            .eq('org_id', orgId)
 
-                const html = await render(SubscriptionActivatedEmail({
-                  nombre: (ownerTyped.full_name ?? 'hola').split(' ')[0],
-                  negocio: orgTyped.name,
-                  planId,
-                  appUrl,
-                }))
+          // Email de activacion solo si venia de un estado NO activo
+          // (evita duplicados en eventos posteriores del mismo preapproval).
+          if (previa?.estado !== 'activa') {
+            try {
+              const { data: org } = await supabase
+                .from('organizations').select('name').eq('id', orgId).single()
+              const { data: owner } = await supabase
+                .from('profiles').select('id, full_name')
+                .eq('org_id', orgId).eq('role', 'owner').single()
 
-                await resend.emails.send({
-                  from: emailFrom('Stockio'),
-                  replyTo: replyTo(),
-                  to: ownerEmail,
-                  subject: '¡Suscripción activada en Stockio!',
-                  html,
-                })
+              if (owner && org) {
+                const ownerTyped = owner as { id: string; full_name: string | null }
+                const { data: userInfo } = await supabase.auth.admin.getUserById(ownerTyped.id)
+                const ownerEmail = userInfo?.user?.email
+
+                if (ownerEmail) {
+                  const resend = new Resend(process.env.RESEND_API_KEY)
+                  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://stockio.com.ar'
+                  const orgTyped = org as { name: string }
+
+                  const html = await render(SubscriptionActivatedEmail({
+                    nombre: (ownerTyped.full_name ?? 'hola').split(' ')[0],
+                    negocio: orgTyped.name,
+                    planId: planMp,
+                    appUrl,
+                  }))
+
+                  await resend.emails.send({
+                    from: emailFrom('Stockio'),
+                    replyTo: replyTo(),
+                    to: ownerEmail,
+                    subject: '¡Suscripción activada en Stockio!',
+                    html,
+                  })
+                }
+              }
+            } catch (emailErr) {
+              console.error('[Webhook MP] No se pudo enviar email de activacion:', emailErr)
+            }
+          }
+        } else {
+          // ── paused / cancelled / pending ─────────────────────────────
+          // Solo aplican si el evento es de la suscripcion ACTUAL. Si llega un
+          // evento de un preapproval VIEJO (el que acabamos de reemplazar y
+          // cancelar al cambiar de plan), lo IGNORAMOS — sino paywallearia a un
+          // usuario que justo se re-suscribio.
+          const esEventoStale = prevId && incomingId !== prevId
+          if (!esEventoStale) {
+            let nuevoEstado = mapped
+
+            // Grace period: si cancelo pero le queda periodo pagado, MP manda
+            // 'cancelled' al instante. No bajamos acceso hasta que periodo_fin
+            // pase (lo flipea el GET). Sin esto, cancelar = perder el mes pagado.
+            if (
+              nuevoEstado === 'cancelada' &&
+              previa?.cancelar_al_terminar === true &&
+              previa?.periodo_fin &&
+              new Date() < new Date(previa.periodo_fin)
+            ) {
+              nuevoEstado = 'activa'
+            }
+
+            await supabase.from('suscripciones')
+              .update({ estado: nuevoEstado, mp_suscripcion_id: incomingId })
+              .eq('org_id', orgId)
+          }
+        }
+      }
+    }
+
+    // ── COBRO RECURRENTE (cuota mensual de la suscripcion) ───────────
+    // MP dispara este evento cada vez que intenta cobrar la cuota mensual de
+    // un preapproval. ANTES no se manejaba: los cobros exitosos no se
+    // registraban y los FALLIDOS se ignoraban (el user seguia usando gratis
+    // ~10 dias y nunca recibia aviso). Ahora:
+    //  - approved -> registrar pago, extender periodo_fin, asegurar 'activa'
+    //  - rejected -> marcar fallo y mandar email de "actualiza tu tarjeta"
+    if (type === 'subscription_authorized_payment' && data?.id) {
+      const apRes = await fetch(`https://api.mercadopago.com/authorized_payments/${data.id}`, {
+        headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
+      })
+      const ap = await apRes.json()
+
+      // El authorized_payment trae el preapproval_id (= nuestro mp_suscripcion_id)
+      // y el detalle del pago. El status del pago puede venir en ap.payment.status
+      // o en ap.status segun la version del payload.
+      const preapprovalId = ap.preapproval_id
+      const pagoStatus = ap.payment?.status ?? ap.status
+
+      if (preapprovalId) {
+        const { data: sub } = await supabase
+          .from('suscripciones')
+          .select('org_id, estado, plan_id, pago_fallido_aviso_at')
+          .eq('mp_suscripcion_id', preapprovalId)
+          .single()
+
+        if (sub?.org_id) {
+          if (pagoStatus === 'approved') {
+            // Registrar el cobro mensual (idempotente por mp_payment_id)
+            const pagoId = ap.payment?.id ?? ap.id
+            await supabase.from('pagos').insert({
+              org_id: sub.org_id,
+              mp_payment_id: String(pagoId),
+              monto: ap.transaction_amount ?? ap.payment?.transaction_amount,
+              estado: 'approved',
+              concepto: 'Cuota mensual Stockio',
+              metadata: ap,
+            })
+
+            await supabase.from('suscripciones')
+              .update({
+                estado: 'activa',
+                periodo_inicio: new Date().toISOString(),
+                periodo_fin: new Date(Date.now() + 31 * 24 * 3600 * 1000).toISOString(),
+                ultimo_pago_fallido_at: null,
+                pago_fallido_aviso_at: null,
+              })
+              .eq('org_id', sub.org_id)
+
+          } else if (pagoStatus === 'rejected') {
+            // Marcar el fallo. NO bajamos el acceso todavia — MP reintenta unos
+            // dias y, si agota, manda subscription_preapproval=paused (que SI
+            // baja el acceso). Aca solo avisamos al cliente para que actualice.
+            await supabase.from('suscripciones')
+              .update({ ultimo_pago_fallido_at: new Date().toISOString() })
+              .eq('org_id', sub.org_id)
+
+            // Email idempotente: solo si no avisamos en las ultimas 24h
+            const yaAviso = sub.pago_fallido_aviso_at &&
+              (Date.now() - new Date(sub.pago_fallido_aviso_at).getTime()) < 24 * 3600 * 1000
+
+            if (!yaAviso) {
+              try {
+                const { data: org } = await supabase
+                  .from('organizations').select('name').eq('id', sub.org_id).single()
+                const { data: owner } = await supabase
+                  .from('profiles').select('id, full_name')
+                  .eq('org_id', sub.org_id).eq('role', 'owner').single()
+
+                if (owner && org) {
+                  const ownerTyped = owner as { id: string; full_name: string | null }
+                  const { data: userInfo } = await supabase.auth.admin.getUserById(ownerTyped.id)
+                  const ownerEmail = userInfo?.user?.email
+
+                  if (ownerEmail) {
+                    const resend = new Resend(process.env.RESEND_API_KEY)
+                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://stockio.com.ar'
+                    const orgTyped = org as { name: string }
+
+                    const html = await render(PaymentFailedEmail({
+                      nombre: (ownerTyped.full_name ?? 'hola').split(' ')[0],
+                      negocio: orgTyped.name,
+                      appUrl,
+                    }))
+
+                    await resend.emails.send({
+                      from: emailFrom('Stockio'),
+                      replyTo: replyTo(),
+                      to: ownerEmail,
+                      subject: 'No pudimos cobrar tu suscripción a Stockio',
+                      html,
+                    })
+
+                    await supabase.from('suscripciones')
+                      .update({ pago_fallido_aviso_at: new Date().toISOString() })
+                      .eq('org_id', sub.org_id)
+                  }
+                }
+              } catch (emailErr) {
+                console.error('[Webhook MP] No se pudo enviar email de pago fallido:', emailErr)
               }
             }
-          } catch (emailErr) {
-            // Si falla el email, no abortar el webhook — la suscripcion ya quedo activa.
-            console.error('[Webhook MP] No se pudo enviar email de activacion:', emailErr)
           }
         }
       }

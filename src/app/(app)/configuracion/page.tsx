@@ -663,7 +663,11 @@ function SuscripcionSection({ isDark }: { isDark: boolean }) {
       const res = await fetch('/api/suscripcion/cancelar', { method: 'POST' })
       const data = await res.json()
       if (data.ok) {
-        setMsg({ text: '✓ Suscripción cancelada. No te vamos a cobrar más.', ok: true })
+        // Si hay grace period, el backend devuelve acceso_hasta + mensaje
+        const texto = data.acceso_hasta
+          ? `✓ Suscripción cancelada. Mantenés acceso hasta el ${new Date(data.acceso_hasta).toLocaleDateString('es-AR')}. No te vamos a cobrar más.`
+          : '✓ Suscripción cancelada. No te vamos a cobrar más.'
+        setMsg({ text: texto, ok: true })
         setConfirmandoCancel(false)
         cargar()
       } else {
@@ -684,6 +688,30 @@ function SuscripcionSection({ isDark }: { isDark: boolean }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan_id: otroPlanId }),
+      })
+      const data = await res.json()
+      if (data.init_point) {
+        window.location.href = data.init_point
+      } else {
+        setMsg({ text: data.error ?? 'Error al generar link de pago', ok: false })
+      }
+    } catch {
+      setMsg({ text: 'Error de conexión', ok: false })
+    }
+    setAccionLoading(false)
+  }
+
+  // Actualizar medio de pago: reusa el POST de suscripcion con el MISMO plan.
+  // El backend cancela el preapproval viejo (con la tarjeta que fallaba) y
+  // genera uno nuevo. Sirve cuando MP no pudo cobrar y hay que cambiar tarjeta.
+  const actualizarTarjeta = async () => {
+    setAccionLoading(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/suscripcion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: planIdNorm === 'premium' ? 'premium' : 'normal' }),
       })
       const data = await res.json()
       if (data.init_point) {
@@ -797,6 +825,23 @@ function SuscripcionSection({ isDark }: { isDark: boolean }) {
           >
             🔄 Cambiar plan
           </button>
+          {/* Solo tiene sentido actualizar tarjeta si ya hay una suscripcion
+              paga en MP (no en trial, donde todavia no se cobro nada) */}
+          {susc.estado !== 'trial' && (
+            <button
+              onClick={actualizarTarjeta}
+              disabled={accionLoading}
+              style={{
+                background: 'none',
+                border: `1px solid ${COLORS.primary}`,
+                borderRadius: 8, padding: '10px 18px',
+                color: COLORS.primary, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                opacity: accionLoading ? 0.7 : 1,
+              }}
+            >
+              💳 Actualizar medio de pago
+            </button>
+          )}
           <button
             onClick={() => setConfirmandoCancel(true)}
             disabled={accionLoading}

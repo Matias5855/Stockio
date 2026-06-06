@@ -62,6 +62,21 @@ export async function GET() {
       }
     }
 
+    // Grace period de cancelacion: si el user cancelo pero todavia le queda
+    // periodo pagado (cancelar_al_terminar=true), mantenemos acceso 'activa'
+    // hasta que periodo_fin pase. Recien ahi flipeamos a 'cancelada'.
+    if (
+      suscripcion?.estado === 'activa' &&
+      suscripcion?.cancelar_al_terminar === true &&
+      suscripcion?.periodo_fin &&
+      new Date() > new Date(suscripcion.periodo_fin)
+    ) {
+      await supabase.from('suscripciones')
+        .update({ estado: 'cancelada' })
+        .eq('id', suscripcion.id)
+      return NextResponse.json({ ...suscripcion, estado: 'cancelada' })
+    }
+
     return NextResponse.json(suscripcion)
   } catch (err) {
     if (err instanceof AuthError) {
@@ -97,6 +112,14 @@ export async function POST(req: NextRequest) {
     // appUrl con fallback al origin del request por si la env var no esta
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
     const planConfig = buildPlanesConfig(appUrl)[plan_id]
+
+    // NOTA — Cancelacion diferida del preapproval anterior:
+    // NO cancelamos el preapproval viejo aca. Si lo hicieramos y el usuario
+    // abandonara el checkout, perderia su suscripcion vigente (y deberia
+    // contratar de nuevo, con costo). En cambio, el preapproval viejo se
+    // cancela en el webhook RECIEN cuando el nuevo queda 'authorized'
+    // (ver api/webhook/mp). Asi el cambio de plan / actualizar tarjeta solo
+    // toma efecto si el pago nuevo se completa de verdad.
 
     // 1. Crear plan en MP si no existe, o leer su init_point si ya existe.
     // El init_point del PLAN es la URL donde el user pone su tarjeta y MP
@@ -153,16 +176,34 @@ export async function POST(req: NextRequest) {
       ? `${planInitPoint}&external_reference=${encodeURIComponent(profile.org_id)}`
       : `${planInitPoint}?external_reference=${encodeURIComponent(profile.org_id)}`
 
-    // 3. Marcamos la suscripcion como "trial" tentativamente hasta que
-    // MP confirme el preapproval via webhook. (Si era 'vencida', vuelve
-    // a 'trial' mientras MP procesa.)
-    await supabase.from('suscripciones').upsert({
-      org_id: profile.org_id,
-      plan_id,
-      estado: 'trial',
-      mp_payer_id: payer_email,
-      trial_fin: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-    }, { onConflict: 'org_id' })
+    // 3. Solo registramos mp_payer_id. NO tocamos estado, trial_fin NI plan_id.
+    //
+    // CRITICO (trial infinito): antes esto seteaba estado='trial' +
+    // trial_fin=+30d en cada POST. Eso permitia que un usuario VENCIDO hiciera
+    // clic en "Pagar", abandonara el checkout de MP, y quedara con 30 dias de
+    // trial gratis de nuevo — repetible infinitamente.
+    //
+    // plan_id tampoco se toca aca: el plan recien cambia cuando MP confirma el
+    // nuevo preapproval como 'authorized' (el webhook lo setea desde el plan
+    // real de MP). Asi, si el usuario abandona un cambio de plan, sigue con su
+    // plan y suscripcion actuales — no pierde nada ni paga de nuevo.
+    //
+    // El trial se otorga UNA sola vez, en el registro (api/auth/register).
+    const { error: updateErr } = await supabase.from('suscripciones')
+      .update({ mp_payer_id: payer_email })
+      .eq('org_id', profile.org_id)
+
+    // Si por algun motivo no existe la fila (no deberia: register la crea),
+    // la insertamos en estado 'vencida' para que el paywall siga activo
+    // hasta que MP confirme. NUNCA en trial.
+    if (updateErr) {
+      await supabase.from('suscripciones').insert({
+        org_id: profile.org_id,
+        plan_id,
+        estado: 'vencida',
+        mp_payer_id: payer_email,
+      })
+    }
 
     return NextResponse.json({
       ok: true,

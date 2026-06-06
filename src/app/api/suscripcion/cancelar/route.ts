@@ -29,10 +29,10 @@ export async function POST() {
       }, { status: 503 })
     }
 
-    // Buscar la suscripcion actual + mp_suscripcion_id
+    // Buscar la suscripcion actual + mp_suscripcion_id + periodo_fin
     const { data: susc } = await supabase
       .from('suscripciones')
-      .select('id, estado, mp_suscripcion_id')
+      .select('id, estado, mp_suscripcion_id, periodo_fin')
       .eq('org_id', profile.org_id)
       .single()
 
@@ -73,8 +73,28 @@ export async function POST() {
       }
     }
 
-    // Marcar localmente como cancelada — el webhook de MP eventualmente
-    // confirmara el cambio, pero adelantamos para que la UI refleje al toque
+    // Decidir si hay grace period: si todavia le queda periodo pagado,
+    // mantenemos acceso hasta que termine (Ley 24.240 — el user pago el mes
+    // completo, tiene derecho a usarlo). Recien cuando periodo_fin pase, el
+    // GET/cron flipea a 'cancelada' y aparece el paywall.
+    const tieneGracia = susc.periodo_fin && new Date() < new Date(susc.periodo_fin)
+
+    if (tieneGracia) {
+      // Mantener 'activa' + marcar cancelar_al_terminar. El webhook de MP
+      // (que va a mandar 'cancelled') respeta este flag y no baja el acceso.
+      await supabase
+        .from('suscripciones')
+        .update({ cancelar_al_terminar: true })
+        .eq('id', susc.id)
+
+      return NextResponse.json({
+        ok: true,
+        acceso_hasta: susc.periodo_fin,
+        mensaje: 'Suscripción cancelada. Mantenés acceso hasta el fin del período ya pagado.',
+      })
+    }
+
+    // Sin periodo pagado vigente (estaba en trial, vencida, etc) -> cancelar ya.
     await supabase
       .from('suscripciones')
       .update({ estado: 'cancelada' })
