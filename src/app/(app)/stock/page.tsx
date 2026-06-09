@@ -1,8 +1,9 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
-import { useStock } from '@/lib/hooks/useStock'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useStock, type ResultadoImport } from '@/lib/hooks/useStock'
 import ExportarBtn from '@/components/ExportarBtn'
 import { exportarStockExcel, exportarStockPDF } from '@/lib/exportar'
+import { descargarPlantillaStock, parsearStockExcel, type ResultadoParse } from '@/lib/importar'
 import { getTheme, COLORS } from '@/lib/theme'
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
@@ -37,11 +38,59 @@ const EMPTY_FORM: ProductoForm = {
 }
 
 export default function StockPage() {
-  const { productos, loading, orgId, deleteProducto, refetch } = useStock()
+  const { productos, loading, orgId, deleteProducto, importarProductos, refetch } = useStock()
   const [modal, setModal] = useState(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [form, setForm] = useState<ProductoForm>(EMPTY_FORM)
+
+  // Importacion masiva
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importIntro, setImportIntro] = useState(false)
+  const [parseResult, setParseResult] = useState<ResultadoParse | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ResultadoImport | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+
+  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (e.target) e.target.value = '' // permitir re-seleccionar el mismo archivo
+    if (!file) return
+    setImportError(null)
+    setImportResult(null)
+    setImportIntro(false)
+    try {
+      const result = await parsearStockExcel(file)
+      setParseResult(result)
+    } catch {
+      setImportError('No pudimos leer el archivo. Asegurate de que sea un Excel (.xlsx) o CSV válido.')
+    }
+  }
+
+  const confirmarImport = async () => {
+    if (!parseResult || parseResult.validos.length === 0) return
+    if (!navigator.onLine) {
+      setImportError('Necesitás conexión a internet para importar productos.')
+      return
+    }
+    setImporting(true)
+    setImportError(null)
+    try {
+      const res = await importarProductos(parseResult.validos)
+      setImportResult(res)
+      setParseResult(null)
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Error al importar')
+    }
+    setImporting(false)
+  }
+
+  const cerrarImport = () => {
+    setImportIntro(false)
+    setParseResult(null)
+    setImportResult(null)
+    setImportError(null)
+  }
 
   // Tema sincronizado con el toggle del layout
   const [isDark, setIsDark] = useState(false)
@@ -160,7 +209,20 @@ export default function StockPage() {
             {productos.length} productos · Valor total: {fmt(productos.reduce((a,p) => a + p.cantidad * p.costo, 0))}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={onFileSelected}
+            style={{ display: 'none' }}
+          />
+          <button onClick={() => setImportIntro(true)} style={{
+            background: 'none', color: COLORS.primary,
+            border: `1px solid ${COLORS.primary}`,
+            borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+            fontWeight: 700, fontSize: 13,
+          }}>📥 Importar</button>
           <ExportarBtn
             onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
             onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
@@ -266,6 +328,180 @@ export default function StockPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de importación: intro + preview + confirmación + resultado */}
+      {(importIntro || parseResult || importResult || importError) && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(4,47,46,0.55)',
+          zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{
+            background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
+            padding: 28, width: 520, maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto',
+            boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
+          }}>
+            <p style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
+              Importar productos
+            </p>
+
+            {/* Paso 0: intro — descargar plantilla + seleccionar archivo */}
+            {importIntro && !parseResult && !importResult && !importError && (
+              <>
+                <p style={{ margin: '0 0 16px', fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
+                  Cargá muchos productos de una vez desde un Excel. Si es tu primera vez,
+                  descargá la plantilla, completala (borrá las filas de ejemplo) y subila acá.
+                </p>
+                <ol style={{ margin: '0 0 18px', paddingLeft: 20, fontSize: 13, color: t.text, lineHeight: 1.7 }}>
+                  <li>Descargá la plantilla de ejemplo.</li>
+                  <li>Completá tus productos (las filas con # son ejemplos, borralas o dejalas — se ignoran).</li>
+                  <li>Subí el archivo: te mostramos un resumen antes de confirmar.</li>
+                </ol>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => descargarPlantillaStock(localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
+                    style={{
+                      background: 'none', border: `1px solid ${COLORS.primary}`, borderRadius: 8,
+                      padding: '10px 18px', color: COLORS.primary, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >⬇ Descargar plantilla</button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+                      padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+                    }}
+                  >📂 Seleccionar archivo</button>
+                  <button onClick={cerrarImport} style={{
+                    background: 'none', border: 'none', color: t.textMuted, fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', marginLeft: 'auto',
+                  }}>Cancelar</button>
+                </div>
+              </>
+            )}
+
+            {/* Paso 1: archivo parseado, mostrar resumen y confirmar */}
+            {parseResult && !importResult && (
+              <>
+                <p style={{ margin: '0 0 16px', fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>
+                  Revisá antes de confirmar. Los productos con SKU que ya exista se actualizan; el resto se crean.
+                </p>
+                <div style={{
+                  display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap',
+                }}>
+                  <div style={{ flex: 1, minWidth: 120, background: '#DCFCE7', borderRadius: 10, padding: '12px 14px' }}>
+                    <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#166534' }}>{parseResult.validos.length}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#166534' }}>a importar</p>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 120, background: '#F3F4F6', borderRadius: 10, padding: '12px 14px' }}>
+                    <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#6B7280' }}>{parseResult.omitidos}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>omitidos (ejemplos/vacías)</p>
+                  </div>
+                  {parseResult.errores.length > 0 && (
+                    <div style={{ flex: 1, minWidth: 120, background: '#FEF3C7', borderRadius: 10, padding: '12px 14px' }}>
+                      <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#92400E' }}>{parseResult.errores.length}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: '#92400E' }}>con error</p>
+                    </div>
+                  )}
+                </div>
+
+                {parseResult.errores.length > 0 && (
+                  <div style={{
+                    background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8,
+                    padding: '10px 12px', marginBottom: 16, fontSize: 12, color: '#9A3412',
+                    maxHeight: 140, overflowY: 'auto',
+                  }}>
+                    <strong>Filas que se van a saltear:</strong>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                      {parseResult.errores.slice(0, 10).map((er, i) => (
+                        <li key={i}>Fila {er.fila}: {er.motivo}</li>
+                      ))}
+                      {parseResult.errores.length > 10 && <li>…y {parseResult.errores.length - 10} más</li>}
+                    </ul>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={cerrarImport} disabled={importing} style={{
+                    background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
+                    padding: '10px 18px', color: t.textMuted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}>Cancelar</button>
+                  <button onClick={confirmarImport} disabled={importing || parseResult.validos.length === 0} style={{
+                    background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+                    padding: '10px 18px', fontWeight: 700, fontSize: 13,
+                    cursor: importing || parseResult.validos.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: importing || parseResult.validos.length === 0 ? 0.6 : 1,
+                  }}>
+                    {importing ? 'Importando…' : `Importar ${parseResult.validos.length} productos`}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Paso 2: resultado de la importación */}
+            {importResult && (
+              <>
+                <div style={{
+                  background: '#DCFCE7', borderRadius: 10, padding: 16, margin: '12px 0',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#166534' }}>
+                    ✓ {importResult.insertados} creados · {importResult.actualizados} actualizados
+                  </p>
+                  {importResult.errores > 0 && (
+                    <p style={{ margin: '6px 0 0', fontSize: 13, color: '#92400E' }}>
+                      {importResult.errores} con error
+                    </p>
+                  )}
+                </div>
+                {importResult.detalleErrores.length > 0 && (
+                  <div style={{
+                    background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8,
+                    padding: '10px 12px', marginBottom: 16, fontSize: 12, color: '#9A3412',
+                  }}>
+                    {importResult.detalleErrores.map((d, i) => <div key={i}>{d}</div>)}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={cerrarImport} style={{
+                    background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+                    padding: '10px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                  }}>Listo</button>
+                </div>
+              </>
+            )}
+
+            {/* Error de lectura */}
+            {importError && !parseResult && !importResult && (
+              <>
+                <div style={{
+                  background: '#FFF1F2', border: '1px solid #FECDD3', borderRadius: 8,
+                  padding: '12px 14px', margin: '12px 0', fontSize: 13, color: '#9F1239',
+                }}>{importError}</div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={cerrarImport} style={{
+                    background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
+                    padding: '10px 18px', color: t.textMuted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}>Cerrar</button>
+                </div>
+              </>
+            )}
+
+            {/* Link para descargar plantilla (en preview, no en intro) */}
+            {parseResult && !importResult && (
+              <p style={{ margin: '18px 0 0', paddingTop: 14, borderTop: `1px solid ${t.borderCard}`, fontSize: 12, color: t.textMuted }}>
+                ¿Necesitás la planilla de nuevo?{' '}
+                <button
+                  onClick={() => descargarPlantillaStock(localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
+                  style={{ background: 'none', border: 'none', color: COLORS.primary, fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12 }}
+                >
+                  Descargala de nuevo
+                </button>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {modal && (
