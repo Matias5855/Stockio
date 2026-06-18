@@ -73,30 +73,36 @@ export function useVentas() {
     }
 
     if (navigator.onLine) {
-      const { count } = await supabase
-        .from('ventas').select('*', { count: 'exact', head: true })
-      const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
-      nuevaVenta.nro_factura = nroFinal
-
-      const { data, error } = await supabase
-        .from('ventas').insert({ ...venta, org_id: orgId!, nro_factura: nroFinal }).select().single()
-      if (error) throw new Error(error.message)
-
-      // Items + movimiento de caja en paralelo (no dependen entre si)
-      await Promise.all([
-        supabase.from('venta_items').insert(items.map(i => ({ ...i, venta_id: data.id }))),
-        supabase.from('movimientos').insert({
-          descripcion: `Venta ${nroFinal} — ${venta.cliente_nombre}`,
-          tipo: 'ingreso',
-          categoria_nombre: 'Ventas',
-          monto: venta.total,
+      // RPC transaccional: valida stock (bloquea si no hay), genera nro de
+      // factura atómico e inserta venta + items + movimiento en UNA transacción.
+      // Si falta stock, la RPC hace RAISE y NO queda nada a medias.
+      const { data, error } = await supabase.rpc('crear_venta_segura', {
+        p_venta: {
+          cliente_nombre: venta.cliente_nombre,
           fecha: venta.fecha,
-          venta_id: data.id,
-          org_id: orgId!,
-        }),
-      ])
-      nuevaVenta.id = data.id
-      nuevaVenta.nro_factura = nroFinal
+          estado: venta.estado,
+          subtotal: venta.subtotal,
+          descuento: venta.descuento,
+          total: venta.total,
+          notas: venta.notas,
+        },
+        p_items: items,
+        p_permitir_sin_stock: false,
+        p_venta_id: null,
+      })
+
+      if (error) {
+        const msg = error.message || 'Error al registrar la venta'
+        if (msg.includes('STOCK_INSUFICIENTE')) {
+          const prod = msg.split('STOCK_INSUFICIENTE:')[1]?.trim() || 'un producto'
+          throw new Error(`No hay stock suficiente de "${prod}". La venta no se registró.`)
+        }
+        throw new Error(msg)
+      }
+
+      const res = data as { id: string; nro_factura: string }
+      nuevaVenta.id = res.id
+      nuevaVenta.nro_factura = res.nro_factura
     } else {
       await saveLocal('ventas', { ...nuevaVenta, venta_items: items }, 'insert')
       try {

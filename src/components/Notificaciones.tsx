@@ -5,7 +5,7 @@ import { getTheme, COLORS } from '@/lib/theme'
 
 type Notif = {
   id: string
-  tipo: 'stock_bajo' | 'cuota_vencida' | 'pago_recibido' | 'trial'
+  tipo: 'stock_bajo' | 'cuota_vencida' | 'pago_recibido' | 'trial' | 'sobreventa'
   titulo: string
   mensaje: string
   leida: boolean
@@ -47,7 +47,23 @@ export default function Notificaciones() {
       .eq('org_id', orgId)
       .eq('activo', true)
 
-    const bajos = (productos ?? []).filter(p => p.cantidad <= p.stock_minimo)
+    // Sobreventa: productos en NEGATIVO. Con el bloqueo de stock online, esto
+    // solo ocurre cuando una venta offline se sincronizó sin stock disponible.
+    // Es lo más urgente -> va primero y en rojo.
+    const negativos = (productos ?? []).filter(p => p.cantidad < 0)
+    if (negativos.length > 0) {
+      nuevas.push({
+        id: 'sobreventa',
+        tipo: 'sobreventa',
+        titulo: `${negativos.length} producto${negativos.length > 1 ? 's' : ''} vendido sin stock`,
+        mensaje: `Quedaron en negativo (probablemente por ventas offline). Revisá y reponé: ${negativos.slice(0, 3).map(p => `${p.nombre}: ${p.cantidad}`).join(' · ')}`,
+        leida: false,
+        fecha: new Date().toISOString(),
+      })
+    }
+
+    // Stock bajo (pero no negativo — eso ya lo cubre la alerta de sobreventa).
+    const bajos = (productos ?? []).filter(p => p.cantidad >= 0 && p.cantidad <= p.stock_minimo)
     if (bajos.length > 0) {
       nuevas.push({
         id: 'stock-bajo',
@@ -124,6 +140,7 @@ export default function Notificaciones() {
     cuota_vencida: '⏰',
     pago_recibido: '💰',
     trial: '⚡',
+    sobreventa: '⚠️',
   }
 
   // Tonos del color por tipo
@@ -132,6 +149,7 @@ export default function Notificaciones() {
     cuota_vencida: COLORS.danger,
     pago_recibido: COLORS.secondary,
     trial:         COLORS.primary,
+    sobreventa:    COLORS.danger,
   }
 
   const sinLeer = notifs.filter(n => !n.leida).length

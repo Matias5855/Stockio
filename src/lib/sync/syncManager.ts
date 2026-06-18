@@ -175,35 +175,29 @@ class SyncManager {
       }
 
       if (item.tabla === 'ventas') {
-        const ventaData = { ...cleanData, org_id: orgId } as Record<string, unknown>
-        delete ventaData.venta_items
+        const v = cleanData as Record<string, unknown>
+        const items = Array.isArray(venta_items) ? venta_items : []
 
-        const { count } = await this.supabase
-          .from('ventas').select('*', { count: 'exact', head: true })
-        const nroFinal = `FC-${String((count ?? 0) + 1).padStart(4, '0')}`
-        ventaData.nro_factura = nroFinal
-
-        const { data: ventaCreada, error: ventaErr } = await this.supabase
-          .from('ventas').upsert(ventaData, { onConflict: 'id', ignoreDuplicates: true }).select().single()
-        if (ventaErr) throw new Error(ventaErr.message)
-
-        if (Array.isArray(venta_items) && venta_items.length && ventaCreada) {
-          const items = venta_items as Array<Record<string, unknown>>
-          await Promise.all([
-            this.supabase.from('venta_items').insert(
-              items.map(i => ({ ...i, venta_id: ventaCreada.id }))
-            ),
-            this.supabase.from('movimientos').insert({
-              descripcion: `Venta ${nroFinal} — ${ventaData.cliente_nombre}`,
-              tipo: 'ingreso',
-              categoria_nombre: 'Ventas',
-              monto: ventaData.total,
-              fecha: ventaData.fecha,
-              venta_id: ventaCreada.id,
-              org_id: orgId,
-            }),
-          ])
-        }
+        // Misma RPC transaccional que online, pero con p_permitir_sin_stock=true:
+        // una venta YA hecha en el mostrador (offline) no se puede rechazar por
+        // falta de stock. Se registra igual (puede dejar stock en negativo) y el
+        // front lo detecta para alertar. p_venta_id = id local => idempotente:
+        // si el item se re-sincroniza, la RPC no duplica la venta.
+        const { error: rpcErr } = await this.supabase.rpc('crear_venta_segura', {
+          p_venta: {
+            cliente_nombre: v.cliente_nombre,
+            fecha: v.fecha,
+            estado: v.estado,
+            subtotal: v.subtotal,
+            descuento: v.descuento,
+            total: v.total,
+            notas: v.notas,
+          },
+          p_items: items,
+          p_permitir_sin_stock: true,
+          p_venta_id: String(item.recordId),
+        })
+        if (rpcErr) throw new Error(rpcErr.message)
       } else {
         await this.supabase.from(item.tabla).upsert({ ...cleanData, org_id: orgId })
       }
