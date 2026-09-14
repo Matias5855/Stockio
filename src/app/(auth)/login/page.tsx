@@ -36,12 +36,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    }}>
+    <div
+      className="login-grid"
+      style={{
+        minHeight: '100vh',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      {/* Breakpoint mobile del proyecto: 768px (mismo que la landing).
+          En celular la grilla pasa a una sola columna y el panel de branding
+          se compacta a una barra con el logo — si se apilara entero, el
+          formulario quedaba abajo del fold y habia que scrollear para entrar. */}
+      <style>{`
+        @media (max-width: 768px) {
+          .login-grid {
+            grid-template-columns: 1fr !important;
+            /* auto 1fr: la barra de marca ocupa solo su alto (72px) y el
+               formulario se queda con el resto. Sin esto, las filas se
+               estiran para llenar el 100vh y la barra comia 223px. */
+            grid-template-rows: auto 1fr !important;
+          }
+          .login-brand-panel { padding: 18px 24px !important; }
+          .login-brand-hero, .login-brand-footer { display: none !important; }
+        }
+      `}</style>
       {/* Panel izquierdo — branding teal */}
       <div style={{
         background: 'linear-gradient(160deg, #0D9488 0%, #042F2E 100%)',
@@ -60,7 +80,7 @@ export default function LoginPage() {
           <span style={{ color: '#FFFFFF', fontWeight: 800, fontSize: 20 }}>Stockio</span>
         </Link>
 
-        <div>
+        <div className="login-brand-hero">
           <h2 style={{
             fontSize: 'clamp(24px, 3vw, 34px)',
             fontWeight: 800,
@@ -81,7 +101,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p style={{ fontSize: 12, color: '#5EEAD4', margin: 0 }}>
+        <p className="login-brand-footer" style={{ fontSize: 12, color: '#5EEAD4', margin: 0 }}>
           © {new Date().getFullYear()} Stockio · Hecho en Chaco, Argentina
         </p>
       </div>
