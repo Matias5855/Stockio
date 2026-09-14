@@ -86,7 +86,7 @@ export default function Hero() {
         </div>
 
         <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
-          Sin tarjeta los primeros 30 días · Cancelás cuando quieras
+          No se cobra nada hasta el día 31 · Cancelás antes sin cargo
         </p>
 
         {/* Mockup placeholder — bloque visual del dashboard */}
