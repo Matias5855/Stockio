@@ -25,6 +25,16 @@ export default function Nav() {
       borderBottom: '1px solid #CCFBF1',
       zIndex: 100,
     }}>
+      {/* Breakpoint mobile del proyecto: 768px. Bajo ese ancho, los links de
+          escritorio se esconden y aparece la hamburguesa — antes ambos se
+          mostraban a la vez y la pagina desbordaba horizontalmente. */}
+      <style>{`
+        @media (max-width: 768px) {
+          .landing-nav-links { display: none !important; }
+          .landing-nav-login { display: none !important; }
+          .landing-nav-toggle { display: flex !important; }
+        }
+      `}</style>
       <div style={{
         maxWidth: 1200,
         margin: '0 auto',
@@ -61,7 +71,7 @@ export default function Nav() {
 
         {/* CTAs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Link href="/login" style={{ ...linkStyle, color: COLORS.primary }}>
+          <Link href="/login" className="landing-nav-login" style={{ ...linkStyle, color: COLORS.primary }}>
             Iniciar sesión
           </Link>
           <Link href="/register" style={{
@@ -76,11 +86,15 @@ export default function Nav() {
             Probar gratis
           </Link>
 
-          {/* Mobile menu toggle (oculto por simplicidad — links del medio se esconden en mobile) */}
+          {/* Mobile menu toggle — oculto por default (desktop), la media
+              query de arriba lo muestra bajo 768px con display:flex !important */}
           <button
             onClick={() => setMobileOpen(v => !v)}
+            className="landing-nav-toggle"
             style={{
               display: 'none',
+              alignItems: 'center',
+              justifyContent: 'center',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
@@ -88,20 +102,29 @@ export default function Nav() {
               color: '#1C4542',
             }}
             aria-label="Menu"
+            aria-expanded={mobileOpen}
           >
             ☰
           </button>
         </div>
       </div>
 
-      {/* Mobile dropdown (placeholder simple) */}
+      {/* Mobile dropdown — incluye "Iniciar sesión" porque en mobile se
+          esconde del header (no entraba sin partirse en dos lineas) */}
       {mobileOpen && (
         <div style={{ padding: '8px 24px 16px', borderTop: '1px solid #CCFBF1' }}>
-          <a href="#features" style={{ ...linkStyle, display: 'block', padding: 10 }}>Funciones</a>
-          <a href="#precios" style={{ ...linkStyle, display: 'block', padding: 10 }}>Precios</a>
-          <a href="#beneficios" style={{ ...linkStyle, display: 'block', padding: 10 }}>Beneficios</a>
-          <a href="#resultados" style={{ ...linkStyle, display: 'block', padding: 10 }}>Resultados</a>
-          <a href="#faq" style={{ ...linkStyle, display: 'block', padding: 10 }}>Preguntas</a>
+          <a href="#features" onClick={() => setMobileOpen(false)} style={{ ...linkStyle, display: 'block', padding: 10 }}>Funciones</a>
+          <a href="#precios" onClick={() => setMobileOpen(false)} style={{ ...linkStyle, display: 'block', padding: 10 }}>Precios</a>
+          <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...linkStyle, display: 'block', padding: 10 }}>Beneficios</a>
+          <a href="#resultados" onClick={() => setMobileOpen(false)} style={{ ...linkStyle, display: 'block', padding: 10 }}>Resultados</a>
+          <a href="#faq" onClick={() => setMobileOpen(false)} style={{ ...linkStyle, display: 'block', padding: 10 }}>Preguntas</a>
+          <Link
+            href="/login"
+            onClick={() => setMobileOpen(false)}
+            style={{ ...linkStyle, display: 'block', padding: 10, color: COLORS.primary, fontWeight: 600, borderTop: '1px solid #CCFBF1', marginTop: 4 }}
+          >
+            Iniciar sesión
+          </Link>
         </div>
       )}
     </nav>

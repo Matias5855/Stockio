@@ -12,12 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* NO usamos prefers-color-scheme: el modo oscuro de la app es explicito,
+   lo maneja el usuario con el toggle del sidebar (localStorage stk_dark_mode
+   + getTheme() en src/lib/theme.ts). El bloque dark que traia el boilerplate
+   de create-next-app pintaba el body de #0a0a0a cuando el celular estaba en
+   modo oscuro, y como la landing tiene fondos claros propios, cualquier area
+   no cubierta se veia negra. */
 
 body {
   background: var(--background);
