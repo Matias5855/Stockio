@@ -29,6 +29,29 @@ function PageLoader() {
   )
 }
 
+/**
+ * Pantalla que reemplaza al contenido cuando el usuario llego a una seccion
+ * que su rol no puede ver (ej. entrando por BusquedaGlobal, que no filtra).
+ * No es un error: es un limite esperado, por eso el tono es informativo y
+ * apunta a quien puede resolverlo (el dueño).
+ */
+function SinPermiso({ t }: { t: ReturnType<typeof getTheme> }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '60vh', textAlign: 'center', padding: 20,
+    }}>
+      <div style={{ fontSize: 34, marginBottom: 12 }}>🔒</div>
+      <p style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700, color: t.text }}>
+        No tenés permiso para ver esta sección
+      </p>
+      <p style={{ margin: 0, fontSize: 14, color: '#6B7280', maxWidth: 340, lineHeight: 1.5 }}>
+        Hablá con el dueño del negocio si necesitás acceso.
+      </p>
+    </div>
+  )
+}
+
 export const NavContext = createContext<{
   page: string
   setPage: (p: string) => void
@@ -238,6 +261,15 @@ function AppLayoutInner() {
 
   const ActivePage = PAGE_COMPONENTS[page] ?? DashboardPage
 
+  // Esconder el link del sidebar no alcanza: a una seccion tambien se llega
+  // desde BusquedaGlobal (que no filtra por permiso) o restaurando el estado.
+  // Aca cortamos el render del contenido real.
+  // Solo esperamos a los permisos si la pagina activa requiere uno — asi el
+  // Dashboard (sin requisito) no se demora por una consulta que no lo afecta.
+  const permisoRequerido = NAV.find(item => item.id === page)?.requierePermiso
+  const esperandoPermisos = Boolean(permisoRequerido) && permisosLoading
+  const accesoDenegado = !permisosLoading && !tienePermiso(permisos, role, permisoRequerido)
+
   // Estado del paywall:
   // - vencida/cancelada/pausada -> paywall fullscreen bloqueante
   // - trial con menos de 7 dias -> banner amarillo NO bloqueante
@@ -402,9 +434,15 @@ function AppLayoutInner() {
             </header>
 
             <main style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
-              <Suspense fallback={<PageLoader />}>
-                <ActivePage />
-              </Suspense>
+              {esperandoPermisos ? (
+                <PageLoader />
+              ) : accesoDenegado ? (
+                <SinPermiso t={t} />
+              ) : (
+                <Suspense fallback={<PageLoader />}>
+                  <ActivePage />
+                </Suspense>
+              )}
             </main>
           </div>
         </div>
