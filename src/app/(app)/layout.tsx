@@ -8,6 +8,7 @@ import BusquedaGlobal from '@/components/BusquedaGlobal'
 import Notificaciones from '@/components/Notificaciones'
 import Paywall, { TrialBanner, EstadoSuscripcion } from '@/components/Paywall'
 import OnboardingWizard from '@/components/OnboardingWizard'
+import { AppProvider, useApp } from '@/lib/context/AppContext'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -35,17 +36,29 @@ export const NavContext = createContext<{
 
 export const useNav = () => useContext(NavContext)
 
-// requierePremium=true -> solo aparece para orgs con plan Premium
-type NavItem = { id: string; label: string; icon: string; requierePremium?: boolean }
+// requierePremium=true  -> solo aparece para orgs con plan Premium
+// requierePermiso='...' -> solo aparece si el profile tiene ese permiso en true.
+//   Las claves salen de profiles.permisos (las mismas 8 que ya usa el form de
+//   invitar empleado en empleados/page.tsx). dashboard/cuotas/configuracion/
+//   historial no llevan requisito porque hoy no tienen una clave definida en
+//   PERMISOS_LABELS — ampliar ese set es un cambio mayor (tocaria el form de
+//   invitacion), queda como pendiente conocido.
+type NavItem = {
+  id: string
+  label: string
+  icon: string
+  requierePremium?: boolean
+  requierePermiso?: string
+}
 
 const NAV: readonly NavItem[] = [
   { id: 'dashboard',     label: 'Dashboard',     icon: '◈' },
-  { id: 'stock',         label: 'Inventario',    icon: '▦' },
-  { id: 'ventas',        label: 'Ventas',        icon: '↗' },
-  { id: 'finanzas',      label: 'Finanzas',      icon: '$' },
-  { id: 'archivos',      label: 'Archivos',      icon: '⊞' },
+  { id: 'stock',         label: 'Inventario',    icon: '▦', requierePermiso: 'ver_stock' },
+  { id: 'ventas',        label: 'Ventas',        icon: '↗', requierePermiso: 'ver_ventas' },
+  { id: 'finanzas',      label: 'Finanzas',      icon: '$', requierePermiso: 'ver_finanzas' },
+  { id: 'archivos',      label: 'Archivos',      icon: '⊞', requierePermiso: 'ver_archivos' },
   { id: 'cuotas',        label: 'Cuotas',        icon: '⊟' },
-  { id: 'empleados',     label: 'Empleados',     icon: '👥', requierePremium: true },
+  { id: 'empleados',     label: 'Empleados',     icon: '👥', requierePremium: true, requierePermiso: 'gestionar_usuarios' },
   { id: 'historial',     label: 'Historial',     icon: '⟲', requierePremium: true },
   { id: 'configuracion', label: 'Configuración', icon: '⚙' },
 ] as const
@@ -53,6 +66,23 @@ const NAV: readonly NavItem[] = [
 function esPlanPremium(planId?: string): boolean {
   if (!planId) return false
   return planId.toLowerCase() === 'premium'
+}
+
+/**
+ * El dueño (role 'owner') siempre puede todo: al registrarse se le crean los 8
+ * permisos en true (api/auth/register), pero el bypass explicito evita que
+ * quede encerrado fuera de su propio negocio si ese dato faltara o llegara mal.
+ */
+function tienePermiso(permisos: Record<string, boolean>, role: string, clave?: string): boolean {
+  if (!clave) return true
+  if (role === 'owner') return true
+  return permisos?.[clave] === true
+}
+
+// Un item es visible si cumple AMBOS requisitos: plan y permiso.
+function puedeVer(item: NavItem, planId: string | undefined, permisos: Record<string, boolean>, role: string): boolean {
+  if (item.requierePremium && !esPlanPremium(planId)) return false
+  return tienePermiso(permisos, role, item.requierePermiso)
 }
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
@@ -74,7 +104,24 @@ type SuscripcionInfo = {
   email?: string
 }
 
+/**
+ * El provider va en un componente ENVOLVENTE, no adentro de AppLayoutInner.
+ * El contexto de React solo fluye hacia abajo: si <AppProvider> se montara
+ * dentro del return de AppLayoutInner, ese mismo componente no podria leerlo
+ * con useApp() (obtendria los valores por defecto: role 'member', permisos {}),
+ * y justamente lo necesita para filtrar el NAV y bloquear paginas por permiso.
+ */
 export default function AppLayout() {
+  return (
+    <AppProvider>
+      <AppLayoutInner />
+    </AppProvider>
+  )
+}
+
+function AppLayoutInner() {
+  // role y permisos del usuario logueado (los trae AppProvider desde profiles)
+  const { role, permisos, loading: permisosLoading } = useApp()
   const supabase = useMemo(() => createClient(), [])
   const [page, setPage] = useState('dashboard')
   const [isDark, setIsDark] = useState(false)
@@ -292,12 +339,20 @@ export default function AppLayout() {
             </div>
 
             <nav style={{ flex: 1, padding: '10px 0' }}>
-              {NAV.filter(item => !item.requierePremium || esPlanPremium(suscripcion?.plan_id)).map(item => (
-                <button key={item.id} onClick={() => setPage(item.id)} style={navBtnStyle(page === item.id)}>
-                  <span style={{ fontSize: 16 }}>{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
-                </button>
-              ))}
+              {/* Mientras no sepamos los permisos no dibujamos los items: si
+                  filtraramos con permisos vacios, el menu apareceria recortado
+                  y despues completo (parpadeo feo para el dueño), o al reves
+                  mostraria de mas por un instante a un empleado limitado. */}
+              {permisosLoading ? null : (
+                NAV
+                  .filter(item => puedeVer(item, suscripcion?.plan_id, permisos, role))
+                  .map(item => (
+                    <button key={item.id} onClick={() => setPage(item.id)} style={navBtnStyle(page === item.id)}>
+                      <span style={{ fontSize: 16 }}>{item.icon}</span>
+                      {!collapsed && <span>{item.label}</span>}
+                    </button>
+                  ))
+              )}
             </nav>
 
             <div style={{
