@@ -16,10 +16,34 @@ type Tabla = 'productos' | 'ventas' | 'movimientos'
 // Cada cuanto forzar full pull para limpiar registros borrados que el delta no detecta
 const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24h
 
+// Bandera de "la sesion ya no sirve". Se da cuando Supabase revoca la sesion:
+// tipicamente porque la misma cuenta se logueo en otro dispositivo y esta
+// activo "Enforce single session per user". Se persiste en localStorage porque
+// el aviso tiene que sobrevivir a un refresh: los datos siguen guardados en
+// IndexedDB, pero todavia no llegaron al servidor y el usuario debe saberlo.
+const AUTH_FLAG_KEY = 'stk_sync_requiere_reauth'
+
+// Evento que escucha el layout para mostrar/ocultar el cartel de reautenticacion.
+export const SYNC_AUTH_EVENT = 'syncAuthError'
+
+/**
+ * Distingue "se cayo la red" de "tu sesion no vale mas". Es la diferencia entre
+ * reintentar en silencio y avisarle al usuario que tiene que volver a entrar.
+ * PGRST301 = JWT invalido o vencido · 42501 = RLS rechaza (sin identidad valida).
+ */
+function esErrorDeAuth(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { code?: string; status?: number; message?: string }
+  if (e.status === 401 || e.status === 403) return true
+  if (e.code === 'PGRST301' || e.code === '42501') return true
+  return /jwt|token|refresh|unauthorized|not authenticated/i.test(e.message ?? '')
+}
+
 class SyncManager {
   private supabase = createClient()
   private syncing = false
   private initialized = false
+  private authError = false
 
   init() {
     if (this.initialized || typeof window === 'undefined') return
@@ -32,17 +56,39 @@ class SyncManager {
     return typeof navigator !== 'undefined' && navigator.onLine
   }
 
+  // true = hay que volver a iniciar sesion para poder sincronizar.
+  get requiereReautenticacion(): boolean {
+    try { return localStorage.getItem(AUTH_FLAG_KEY) === '1' } catch { return false }
+  }
+
+  // Cuantos cambios locales estan esperando subir (para el texto del aviso).
+  async contarPendientes(): Promise<number> {
+    try { return (await getPendingSync()).length } catch { return 0 }
+  }
+
+  private marcarAuth(requiere: boolean) {
+    try {
+      if (requiere) localStorage.setItem(AUTH_FLAG_KEY, '1')
+      else localStorage.removeItem(AUTH_FLAG_KEY)
+    } catch {}
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(SYNC_AUTH_EVENT))
+  }
+
   async sync(opts?: { force?: boolean }): Promise<void> {
     if (this.syncing || !this.isOnline) return
     this.syncing = true
+    // Se recalcula en cada intento: si esta vez anduvo, el cartel desaparece solo.
+    this.authError = false
     try {
       await this.pushToSupabase()
       await this.pullFromSupabase({ force: opts?.force })
       window.dispatchEvent(new Event('syncCompleted'))
     } catch (err) {
+      if (esErrorDeAuth(err)) this.authError = true
       console.error('[SyncManager] Error:', err)
       window.dispatchEvent(new Event('syncCompleted'))
     } finally {
+      this.marcarAuth(this.authError)
       this.syncing = false
     }
   }
@@ -98,6 +144,9 @@ class SyncManager {
     // Intento 2: full pull
     const { data, error } = await buildSelect()
     if (error) {
+      // Tambien miramos auth aca: si no hay nada pendiente que subir, el pull
+      // es el unico lugar donde se nota que la sesion dejo de valer.
+      if (esErrorDeAuth(error)) this.authError = true
       console.error(`[SyncManager] Full pull ${tabla} fallo:`, error.message)
       return []
     }
@@ -150,6 +199,17 @@ class SyncManager {
     const pending = await getPendingSync() as PendingItem[]
     if (!pending.length) return
 
+    // Antes de intentar subir nada, confirmar que la sesion sigue viva. Si la
+    // revocaron, cada push fallaria por RLS y el error se leeria como un
+    // problema de red cualquiera. Preguntando primero damos el aviso correcto
+    // y, sobre todo, no tocamos la cola local: los cambios siguen ahi.
+    const { data: { user }, error: authErr } = await this.supabase.auth.getUser()
+    if (authErr || !user) {
+      this.authError = true
+      console.warn('[SyncManager] Sesion invalida — la cola local queda intacta')
+      return
+    }
+
     const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return
 
@@ -168,8 +228,12 @@ class SyncManager {
     try {
       const { syncStatus, localTimestamp, venta_items, ...cleanData } = item.data
 
+      // Ojo: supabase-js NO tira excepcion, devuelve { error }. Si no lo
+      // miramos, markSynced borra el item de la cola como si hubiera subido
+      // y el cambio se pierde. Por eso cada operacion revisa su error.
       if (item.operacion === 'delete') {
-        await this.supabase.from(item.tabla).delete().eq('id', item.recordId)
+        const { error } = await this.supabase.from(item.tabla).delete().eq('id', item.recordId)
+        if (error) throw error
         await markSynced(item.tabla, item.recordId, item.id)
         return
       }
@@ -197,13 +261,17 @@ class SyncManager {
           p_permitir_sin_stock: true,
           p_venta_id: String(item.recordId),
         })
-        if (rpcErr) throw new Error(rpcErr.message)
+        if (rpcErr) throw rpcErr
       } else {
-        await this.supabase.from(item.tabla).upsert({ ...cleanData, org_id: orgId })
+        const { error } = await this.supabase.from(item.tabla).upsert({ ...cleanData, org_id: orgId })
+        if (error) throw error
       }
 
       await markSynced(item.tabla, item.recordId, item.id)
     } catch (err) {
+      // No se llama a markSynced: el item queda en la cola y se reintenta en
+      // el proximo sync. Si el motivo fue la sesion, se avisa al usuario.
+      if (esErrorDeAuth(err)) this.authError = true
       console.error(`[SyncManager] Error sincronizando ${item.tabla}:`, err)
     }
   }
@@ -218,6 +286,8 @@ class SyncManager {
     localStorage.removeItem(this.lastSyncKey('productos'))
     localStorage.removeItem(this.lastSyncKey('ventas'))
     localStorage.removeItem(this.lastSyncKey('movimientos'))
+    this.authError = false
+    localStorage.removeItem(AUTH_FLAG_KEY)
   }
 }
 

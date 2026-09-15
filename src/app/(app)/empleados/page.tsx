@@ -179,6 +179,24 @@ export default function EmpleadosPage() {
         }}>+ Invitar empleado</button>
       </div>
 
+      {/* Los permisos por rol solo sirven si cada persona entra con su propia
+          cuenta. Stockio permite un solo dispositivo activo por cuenta (ver
+          db/sesion_unica.sql), asi que compartir usuario se nota enseguida. */}
+      <div style={{
+        background: isDark ? 'rgba(224,160,48,0.10)' : '#FEF3C7',
+        border: `1px solid ${isDark ? 'rgba(224,160,48,0.35)' : '#FDE68A'}`,
+        borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+        fontSize: 13, lineHeight: 1.5, color: t.text,
+        display: 'flex', gap: 10, alignItems: 'flex-start',
+      }}>
+        <span style={{ fontSize: 15, lineHeight: 1.3 }}>👤</span>
+        <span>
+          <strong>Cada persona necesita su propia cuenta.</strong> Stockio permite
+          un solo dispositivo por cuenta: si dos personas usan el mismo usuario se
+          van a bloquear mutuamente, y los permisos por rol dejan de tener efecto.
+        </span>
+      </div>
+
       {msg && (
         <div style={{
           background: msg.ok ? COLORS.badge.ok.bg : COLORS.badge.error.bg,

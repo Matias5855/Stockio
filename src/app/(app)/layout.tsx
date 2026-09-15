@@ -2,13 +2,15 @@
 import { useState, useEffect, useMemo, useCallback, createContext, useContext, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
-import { syncManager } from '@/lib/sync/syncManager'
+import { syncManager, SYNC_AUTH_EVENT } from '@/lib/sync/syncManager'
 import { getTheme, COLORS } from '@/lib/theme'
 import BusquedaGlobal from '@/components/BusquedaGlobal'
 import Notificaciones from '@/components/Notificaciones'
 import Paywall, { TrialBanner, EstadoSuscripcion } from '@/components/Paywall'
 import OnboardingWizard from '@/components/OnboardingWizard'
+import SesionDesplazada from '@/components/SesionDesplazada'
 import { AppProvider, useApp } from '@/lib/context/AppContext'
+import { reclamarSesion, vigilarSesion } from '@/lib/auth/sesionUnica'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -144,12 +146,18 @@ export default function AppLayout() {
 
 function AppLayoutInner() {
   // role y permisos del usuario logueado (los trae AppProvider desde profiles)
-  const { role, permisos, loading: permisosLoading } = useApp()
+  const { role, permisos, loading: permisosLoading, userId } = useApp()
   const supabase = useMemo(() => createClient(), [])
   const [page, setPage] = useState('dashboard')
   const [isDark, setIsDark] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
+  // Sesion revocada desde otro dispositivo: los cambios locales no pueden subir
+  // hasta volver a iniciar sesion. pendientesSync es cuantos estan esperando.
+  const [requiereReauth, setRequiereReauth] = useState(false)
+  const [pendientesSync, setPendientesSync] = useState(0)
+  // Otro dispositivo se quedó con la sesión de esta misma cuenta.
+  const [sesionDesplazada, setSesionDesplazada] = useState(false)
   const [orgNombre, setOrgNombre] = useState('Gestión PyME')
   const [suscripcion, setSuscripcion] = useState<SuscripcionInfo | null>(null)
   const [suscripcionLoaded, setSuscripcionLoaded] = useState(false)
@@ -162,6 +170,19 @@ function AppLayoutInner() {
   useEffect(() => {
     syncManager.init()
     setIsOffline(!navigator.onLine)
+
+    const refrescarReauth = () => {
+      setRequiereReauth(syncManager.requiereReautenticacion)
+      syncManager.contarPendientes().then(setPendientesSync)
+    }
+    refrescarReauth()
+    window.addEventListener(SYNC_AUTH_EVENT, refrescarReauth)
+
+    // Si venimos de reautenticarnos, la bandera sigue puesta del intento
+    // anterior: reintentamos ahora que hay sesion nueva para que la cola suba
+    // sola, sin que el usuario tenga que hacer nada. init() no alcanza cuando
+    // el modulo quedo cargado de antes (navegacion SPA desde /login).
+    if (syncManager.requiereReautenticacion) syncManager.sync()
     setOrgNombre(localStorage.getItem('stk_org_nombre') ?? 'Gestión PyME')
 
     // Leer preferencia de tema persistida
@@ -220,12 +241,40 @@ function AppLayoutInner() {
     return () => {
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
+      window.removeEventListener(SYNC_AUTH_EVENT, refrescarReauth)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Sesión única por cuenta (ver db/sesion_unica.sql): al abrir la app este
+  // dispositivo reclama la sesión y queda escuchando por si otro la reclama.
+  useEffect(() => {
+    if (!userId) return
+    let limpiar: (() => void) | undefined
+    let cancelado = false
+    // Reclamar PRIMERO y vigilar después. Si arrancaran en paralelo, el chequeo
+    // inicial podría leer el ID anterior y marcarnos como desplazados a
+    // nosotros mismos apenas entramos.
+    reclamarSesion().then(() => {
+      if (cancelado) return
+      limpiar = vigilarSesion(userId, setSesionDesplazada)
+    })
+    return () => { cancelado = true; limpiar?.() }
+  }, [userId])
+
   const handleLogout = useCallback(async () => {
+    // Limpia timestamps de delta sync y la bandera de reautenticacion: si en
+    // este mismo dispositivo entra otra cuenta, no debe heredar ese estado.
+    syncManager.clearSyncState()
     await supabase.auth.signOut()
+    window.location.href = '/login'
+  }, [supabase])
+
+  // Volver a entrar con la sesion caida. Se cierra la sesion muerta primero y
+  // se navega con location (no router) para arrancar con el modulo limpio.
+  // NO se toca la cola local: los cambios pendientes esperan al proximo login.
+  const handleReautenticar = useCallback(async () => {
+    try { await supabase.auth.signOut() } catch {}
     window.location.href = '/login'
   }, [supabase])
 
@@ -285,6 +334,18 @@ function AppLayoutInner() {
     return dias > 0 && dias <= 7 ? dias : null
   })()
 
+  // Va antes que el paywall: si perdiste la sesión no podés hacer nada acá, ni
+  // siquiera pagar, y hay una acción concreta para tomar ahora mismo.
+  if (sesionDesplazada) {
+    return (
+      <SesionDesplazada
+        isDark={isDark}
+        onRecuperar={() => setSesionDesplazada(false)}
+        onCerrarSesion={handleLogout}
+      />
+    )
+  }
+
   // Si esta vencida, mostramos SOLO el paywall (bloquea todo el contenido)
   if (necesitaPaywall && suscripcion) {
     return (
@@ -321,6 +382,30 @@ function AppLayoutInner() {
         {isOffline && (
           <div style={{ background: COLORS.warning, color: '#FFFFFF', padding: '8px 20px', fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0, zIndex: 100 }}>
             ⚠ Sin conexión — los cambios se guardan localmente y se sincronizan al reconectarte
+          </div>
+        )}
+
+        {/* Banner sesion revocada — va arriba de todo y en rojo porque, a
+            diferencia del banner offline, aca los cambios NO se estan
+            guardando en el servidor y hace falta que el usuario actue. */}
+        {requiereReauth && (
+          <div style={{
+            background: COLORS.danger, color: '#FFFFFF', padding: '10px 20px',
+            fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0, zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap',
+          }}>
+            <span>
+              ⚠ Tu sesión se cerró en otro dispositivo.
+              {pendientesSync > 0
+                ? ` Tenés ${pendientesSync} cambio${pendientesSync > 1 ? 's' : ''} sin sincronizar — no se pierden, se suben cuando vuelvas a entrar.`
+                : ' Iniciá sesión de nuevo para seguir trabajando.'}
+            </span>
+            <button onClick={handleReautenticar} style={{
+              background: '#FFFFFF', color: COLORS.danger, border: 'none',
+              borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>
+              Iniciar sesión
+            </button>
           </div>
         )}
 
