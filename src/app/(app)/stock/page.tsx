@@ -5,6 +5,7 @@ import ExportarBtn from '@/components/ExportarBtn'
 import { exportarStockExcel, exportarStockPDF } from '@/lib/exportar'
 import { descargarPlantillaStock, parsearStockExcel, type ResultadoParse } from '@/lib/importar'
 import { getTheme, COLORS } from '@/lib/theme'
+import { usePermiso } from '@/lib/auth/usePermiso'
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
 
@@ -39,6 +40,10 @@ const EMPTY_FORM: ProductoForm = {
 
 export default function StockPage() {
   const { productos, loading, orgId, deleteProducto, importarProductos, refetch } = useStock()
+  // Ver el inventario y poder modificarlo son dos permisos distintos: un
+  // 'vendedor' entra a esta pantalla para consultar precios y stock, pero no
+  // carga ni borra productos.
+  const puedeEditar = usePermiso('editar_stock')
   const [modal, setModal] = useState(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
@@ -217,22 +222,29 @@ export default function StockPage() {
             onChange={onFileSelected}
             style={{ display: 'none' }}
           />
-          <button onClick={() => setImportIntro(true)} style={{
-            background: 'none', color: COLORS.primary,
-            border: `1px solid ${COLORS.primary}`,
-            borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
-            fontWeight: 700, fontSize: 13,
-          }}>📥 Importar</button>
+          {/* Importar es la modificacion de stock mas grande que hay: pisa el
+              inventario entero de una. Va detras del mismo permiso. */}
+          {puedeEditar && (
+            <button onClick={() => setImportIntro(true)} style={{
+              background: 'none', color: COLORS.primary,
+              border: `1px solid ${COLORS.primary}`,
+              borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+              fontWeight: 700, fontSize: 13,
+            }}>📥 Importar</button>
+          )}
+          {/* Exportar queda para todos: es solo lectura de lo que ya ve. */}
           <ExportarBtn
             onExcelClick={() => exportarStockExcel(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
             onPDFClick={() => exportarStockPDF(productos, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
           />
-          <button onClick={openNew} style={{
-            background: COLORS.primary, color: '#fff', border: 'none',
-            borderRadius: 8, padding: '10px 18px', cursor: 'pointer',
-            fontWeight: 700, fontSize: 13,
-            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-          }}>+ Nuevo producto</button>
+          {puedeEditar && (
+            <button onClick={openNew} style={{
+              background: COLORS.primary, color: '#fff', border: 'none',
+              borderRadius: 8, padding: '10px 18px', cursor: 'pointer',
+              fontWeight: 700, fontSize: 13,
+              boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+            }}>+ Nuevo producto</button>
+          )}
         </div>
       </div>
 
@@ -302,6 +314,7 @@ export default function StockPage() {
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
+                          {puedeEditar && (
                           <button onClick={() => openEdit(p)} title="Editar"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
@@ -310,6 +323,8 @@ export default function StockPage() {
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.primary; e.currentTarget.style.background = isDark ? 'rgba(13,148,136,0.15)' : '#CCFBF1' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
                           >✎</button>
+                          )}
+                          {puedeEditar && (
                           <button onClick={() => { if (confirm('¿Eliminar este producto?')) deleteProducto(p.id) }} title="Eliminar"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
@@ -318,6 +333,8 @@ export default function StockPage() {
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.danger; e.currentTarget.style.background = '#FFF1F2' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
                           >×</button>
+                          )}
+                          {!puedeEditar && <span style={{ color: t.textMuted, fontSize: 12 }}>—</span>}
                         </div>
                       </td>
                     </tr>

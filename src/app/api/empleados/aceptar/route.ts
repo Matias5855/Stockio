@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { createClient } from '@supabase/supabase-js'
 import { parseBody, ValidationError } from '@/lib/schemas'
 import { rateLimit, getClientIp } from '@/lib/rateLimit'
+import { ROLES_PRESET, ROLES_INVITABLES } from '@/lib/auth/permisos'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,24 +23,6 @@ const AceptarInputSchema = z.object({
   password: z.string().min(6).max(72),
   full_name: z.string().trim().min(2).max(80),
 })
-
-const PERMISOS_PRESET: Record<string, Record<string, boolean>> = {
-  admin: {
-    ver_dashboard: true, ver_stock: true, editar_stock: true,
-    ver_ventas: true, crear_ventas: true, ver_finanzas: true,
-    ver_archivos: true, gestionar_usuarios: false,
-  },
-  vendedor: {
-    ver_dashboard: true, ver_stock: true, editar_stock: false,
-    ver_ventas: true, crear_ventas: true, ver_finanzas: false,
-    ver_archivos: false, gestionar_usuarios: false,
-  },
-  repositor: {
-    ver_dashboard: true, ver_stock: true, editar_stock: true,
-    ver_ventas: false, crear_ventas: false, ver_finanzas: false,
-    ver_archivos: false, gestionar_usuarios: false,
-  },
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,7 +59,7 @@ export async function POST(req: NextRequest) {
     if (new Date(invitacion.expires_at) < new Date()) {
       return NextResponse.json({ error: 'La invitación expiró' }, { status: 400 })
     }
-    if (!['admin', 'vendedor', 'repositor'].includes(invitacion.role)) {
+    if (!ROLES_INVITABLES.includes(invitacion.role)) {
       return NextResponse.json({ error: 'Rol invalido en la invitacion' }, { status: 400 })
     }
 
@@ -113,7 +96,7 @@ export async function POST(req: NextRequest) {
       org_id: invitacion.org_id,
       full_name,
       role: invitacion.role,
-      permisos: PERMISOS_PRESET[invitacion.role],
+      permisos: ROLES_PRESET[invitacion.role],
     })
     if (profileErr) {
       console.error('[Aceptar invitacion] profile error:', profileErr)

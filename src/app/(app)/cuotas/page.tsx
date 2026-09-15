@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { logHistorial } from '@/lib/historial'
+import { usePermiso } from '@/lib/auth/usePermiso'
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-AR')
 const supabase = createClient()
@@ -38,6 +39,9 @@ type CuotaVenta = {
 }
 
 export default function CuotasPage() {
+  // ver_cuotas (lo aplica el layout) deja mirar los planes; gestionar_cuotas
+  // es lo que habilita crear planes, cobrar y generar links de pago.
+  const puedeGestionar = usePermiso('gestionar_cuotas')
   const [cuotas, setCuotas] = useState<CuotaVenta[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
@@ -243,6 +247,9 @@ export default function CuotasPage() {
           <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>Cuotas y créditos</p>
           <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>{cuotas.length} planes de pago registrados</p>
         </div>
+        {/* Crear planes y cobrar cuotas es mover plata: va detras de
+            gestionar_cuotas, aparte de ver_cuotas que solo deja mirar. */}
+        {puedeGestionar && (
         <button onClick={() => setModal(true)} style={{
           background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
           padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
@@ -250,6 +257,7 @@ export default function CuotasPage() {
         }}>
           + Nueva cuota
         </button>
+        )}
       </div>
 
       {/* Métricas */}
@@ -343,11 +351,13 @@ export default function CuotasPage() {
                             padding: '5px 12px', cursor: 'pointer',
                             color: COLORS.primary, fontSize: 12, fontWeight: 700,
                           }}>Ver</button>
+                          {puedeGestionar && (
                           <button onClick={() => generarLinkMP(c)} disabled={generandoLink} style={{
                             background: COLORS.badge.ok.bg, border: 'none', borderRadius: 6,
                             padding: '5px 12px', cursor: 'pointer',
                             color: COLORS.badge.ok.text, fontSize: 12, fontWeight: 700,
                           }}>Link MP</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -427,7 +437,7 @@ export default function CuotasPage() {
                       fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6,
                       background: cpBadge.bg, color: cpBadge.text, textTransform: 'capitalize',
                     }}>{cp.estado}</span>
-                    {cp.estado !== 'pagada' && (
+                    {cp.estado !== 'pagada' && puedeGestionar && (
                       <button onClick={() => registrarPago(cp.id, detalle.id, cp.monto)} style={{
                         background: COLORS.primary, border: 'none', borderRadius: 6,
                         padding: '6px 14px', cursor: 'pointer', color: '#fff',
@@ -441,7 +451,7 @@ export default function CuotasPage() {
               )
             })}
 
-            {detalle.cliente_email && (
+            {detalle.cliente_email && puedeGestionar && (
               <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
                 <button onClick={() => generarLinkMP(detalle)} style={{
                   flex: 1, background: COLORS.badge.ok.bg, border: `1px solid #86EFAC`,

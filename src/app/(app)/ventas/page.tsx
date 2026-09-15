@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic'
 import ExportarBtn from '@/components/ExportarBtn'
 import { exportarVentasExcel, exportarVentasPDF } from '@/lib/exportar'
 import { getTheme, COLORS } from '@/lib/theme'
+import { usePermiso } from '@/lib/auth/usePermiso'
 
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false })
 
@@ -37,6 +38,13 @@ type VentaRow = {
 export default function VentasPage() {
   const { ventas, loading, crearVenta, cambiarEstado, deleteVenta } = useVentas()
   const { productos } = useStock()
+  // Tres permisos distintos a proposito. Eliminar va separado de crear porque
+  // es el control clasico contra el faltante: quien registra la venta en el
+  // mostrador no deberia poder borrarla despues (el preset 'vendedor' tiene
+  // crear_ventas y editar_ventas, pero NO eliminar_ventas).
+  const puedeCrear    = usePermiso('crear_ventas')
+  const puedeEditar   = usePermiso('editar_ventas')
+  const puedeEliminar = usePermiso('eliminar_ventas')
 
   const [modal, setModal]           = useState(false)
   const [scanner, setScanner]       = useState(false)
@@ -296,20 +304,26 @@ export default function VentasPage() {
             onExcelClick={() => exportarVentasExcel(ventas, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
             onPDFClick={() => exportarVentasPDF(ventas, localStorage.getItem('stk_org_nombre') ?? 'Negocio')}
           />
-          <button onClick={() => setScanner(true)} style={{
-            background: '#CCFBF1', color: COLORS.primary,
-            border: `1px solid ${COLORS.primary}`, borderRadius: 8,
-            padding: '10px 16px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
-          }}>
-            📷 Escanear
-          </button>
-          <button onClick={() => setModal(true)} style={{
-            background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
-            padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
-            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-          }}>
-            + Registrar venta
-          </button>
+          {/* Escanear abre directo el alta de venta, asi que va con el mismo
+              permiso que el boton de registrar. */}
+          {puedeCrear && (
+            <button onClick={() => setScanner(true)} style={{
+              background: '#CCFBF1', color: COLORS.primary,
+              border: `1px solid ${COLORS.primary}`, borderRadius: 8,
+              padding: '10px 16px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            }}>
+              📷 Escanear
+            </button>
+          )}
+          {puedeCrear && (
+            <button onClick={() => setModal(true)} style={{
+              background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+              padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+              boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+            }}>
+              + Registrar venta
+            </button>
+          )}
         </div>
       </div>
 
@@ -338,7 +352,11 @@ export default function VentasPage() {
           <p style={{ padding: 40, textAlign: 'center', color: t.textMuted }}>Cargando…</p>
         ) : ventas.length === 0 ? (
           <p style={{ padding: 40, textAlign: 'center', color: t.textMuted, fontSize: 13 }}>
-            Sin ventas registradas. Empezá con &quot;+ Registrar venta&quot;.
+            {/* Sin permiso no hay boton al que mandarlo: el texto lo mandaba a
+                buscar algo que no ve. */}
+            {puedeCrear
+              ? <>Sin ventas registradas. Empezá con &quot;+ Registrar venta&quot;.</>
+              : <>Todavía no hay ventas registradas.</>}
           </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -376,16 +394,20 @@ export default function VentasPage() {
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
+                          {puedeEditar && (
                           <button onClick={() => cambiarEstado(v.id, v.estado === 'cobrada' ? 'pendiente' : 'cobrada')}
                             title="Cambiar estado"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 14, padding: 6, borderRadius: 6 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.primary; e.currentTarget.style.background = isDark ? 'rgba(13,148,136,0.15)' : '#CCFBF1' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
                           >⇄</button>
+                          )}
                           <button onClick={() => descargarPDF(v)} title="Descargar PDF (sin CAE)"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.primary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >⬇</button>
-                          {arcaActivado && (
+                          {/* Emitir CAE genera una factura oficial ante AFIP:
+                              es un acto fiscal, no una descarga. Va gateado. */}
+                          {arcaActivado && puedeEditar && (
                             <button
                               onClick={() => emitirConCAE(v.id)}
                               disabled={emitiendoCAE === v.id}
@@ -405,11 +427,13 @@ export default function VentasPage() {
                           <button onClick={() => { setEmailModal(v.id); setEmailInput('') }} title="Enviar por email"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.secondary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >✉</button>
+                          {puedeEliminar && (
                           <button onClick={() => { if (confirm('¿Eliminar esta venta?')) deleteVenta(v.id) }} title="Eliminar"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 18, padding: 6, borderRadius: 6, lineHeight: 1 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.danger; e.currentTarget.style.background = '#FFF1F2' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
                           >×</button>
+                          )}
                         </div>
                       </td>
                     </tr>

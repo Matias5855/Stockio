@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback, createContext, useContext, Suspense } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, createContext, useContext, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { syncManager, SYNC_AUTH_EVENT } from '@/lib/sync/syncManager'
@@ -11,6 +11,7 @@ import OnboardingWizard from '@/components/OnboardingWizard'
 import SesionDesplazada from '@/components/SesionDesplazada'
 import { AppProvider, useApp } from '@/lib/context/AppContext'
 import { reclamarSesion, vigilarSesion } from '@/lib/auth/sesionUnica'
+import { tienePermiso } from '@/lib/auth/permisos'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -63,11 +64,8 @@ export const useNav = () => useContext(NavContext)
 
 // requierePremium=true  -> solo aparece para orgs con plan Premium
 // requierePermiso='...' -> solo aparece si el profile tiene ese permiso en true.
-//   Las claves salen de profiles.permisos (las mismas 8 que ya usa el form de
-//   invitar empleado en empleados/page.tsx). dashboard/cuotas/configuracion/
-//   historial no llevan requisito porque hoy no tienen una clave definida en
-//   PERMISOS_LABELS — ampliar ese set es un cambio mayor (tocaria el form de
-//   invitacion), queda como pendiente conocido.
+//   Las claves salen del catalogo unico en @/lib/auth/permisos, el mismo que
+//   usan el form de invitar y la ruta que acepta la invitacion.
 type NavItem = {
   id: string
   label: string
@@ -77,31 +75,20 @@ type NavItem = {
 }
 
 const NAV: readonly NavItem[] = [
-  { id: 'dashboard',     label: 'Dashboard',     icon: '◈' },
+  { id: 'dashboard',     label: 'Dashboard',     icon: '◈', requierePermiso: 'ver_dashboard' },
   { id: 'stock',         label: 'Inventario',    icon: '▦', requierePermiso: 'ver_stock' },
   { id: 'ventas',        label: 'Ventas',        icon: '↗', requierePermiso: 'ver_ventas' },
   { id: 'finanzas',      label: 'Finanzas',      icon: '$', requierePermiso: 'ver_finanzas' },
   { id: 'archivos',      label: 'Archivos',      icon: '⊞', requierePermiso: 'ver_archivos' },
-  { id: 'cuotas',        label: 'Cuotas',        icon: '⊟' },
+  { id: 'cuotas',        label: 'Cuotas',        icon: '⊟', requierePermiso: 'ver_cuotas' },
   { id: 'empleados',     label: 'Empleados',     icon: '👥', requierePremium: true, requierePermiso: 'gestionar_usuarios' },
-  { id: 'historial',     label: 'Historial',     icon: '⟲', requierePremium: true },
-  { id: 'configuracion', label: 'Configuración', icon: '⚙' },
+  { id: 'historial',     label: 'Historial',     icon: '⟲', requierePremium: true, requierePermiso: 'ver_historial' },
+  { id: 'configuracion', label: 'Configuración', icon: '⚙', requierePermiso: 'ver_configuracion' },
 ] as const
 
 function esPlanPremium(planId?: string): boolean {
   if (!planId) return false
   return planId.toLowerCase() === 'premium'
-}
-
-/**
- * El dueño (role 'owner') siempre puede todo: al registrarse se le crean los 8
- * permisos en true (api/auth/register), pero el bypass explicito evita que
- * quede encerrado fuera de su propio negocio si ese dato faltara o llegara mal.
- */
-function tienePermiso(permisos: Record<string, boolean>, role: string, clave?: string): boolean {
-  if (!clave) return true
-  if (role === 'owner') return true
-  return permisos?.[clave] === true
 }
 
 // Un item es visible si cumple AMBOS requisitos: plan y permiso.
@@ -245,6 +232,22 @@ function AppLayoutInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Aterrizaje: 'dashboard' es el valor por defecto de `page`, pero ahora exige
+  // el permiso ver_dashboard. Si el usuario no lo tiene, lo dejamos en la
+  // primera sección que sí puede ver, para que no entre a un cartel de
+  // "sin permiso" sin haber pedido nada.
+  const aterrizajeResuelto = useRef(false)
+  useEffect(() => {
+    if (permisosLoading || aterrizajeResuelto.current) return
+    aterrizajeResuelto.current = true
+    // Solo se corrige el aterrizaje inicial. Si después navega a mano a algo
+    // prohibido, ve el aviso de "sin permiso": mandarlo a otro lado en
+    // silencio sería más confuso que decirle por qué no puede entrar.
+    if (tienePermiso(permisos, role, 'ver_dashboard')) return
+    const primera = NAV.find(item => puedeVer(item, suscripcion?.plan_id, permisos, role))
+    if (primera) setPage(primera.id)
+  }, [permisosLoading, permisos, role, suscripcion?.plan_id])
 
   // Sesión única por cuenta (ver db/sesion_unica.sql): al abrir la app este
   // dispositivo reclama la sesión y queda escuchando por si otro la reclama.

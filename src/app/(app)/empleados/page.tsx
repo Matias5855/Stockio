@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { useNav } from '../layout'
+import { PERMISOS_LABELS, ROLES_PRESET } from '@/lib/auth/permisos'
 
 type Empleado = {
   id: string
@@ -22,34 +23,9 @@ type Invitacion = {
   token?: string
 }
 
-const PERMISOS_LABELS: Record<string, string> = {
-  ver_dashboard:       'Ver Dashboard',
-  ver_stock:           'Ver Inventario',
-  editar_stock:        'Editar Inventario',
-  ver_ventas:          'Ver Ventas',
-  crear_ventas:        'Crear Ventas',
-  ver_finanzas:        'Ver Finanzas',
-  ver_archivos:        'Ver Archivos',
-  gestionar_usuarios:  'Gestionar Usuarios',
-}
-
-const ROLES_PRESET: Record<string, Record<string, boolean>> = {
-  admin: {
-    ver_dashboard: true, ver_stock: true, editar_stock: true,
-    ver_ventas: true, crear_ventas: true, ver_finanzas: true,
-    ver_archivos: true, gestionar_usuarios: false,
-  },
-  vendedor: {
-    ver_dashboard: true, ver_stock: true, editar_stock: false,
-    ver_ventas: true, crear_ventas: true, ver_finanzas: false,
-    ver_archivos: false, gestionar_usuarios: false,
-  },
-  repositor: {
-    ver_dashboard: true, ver_stock: true, editar_stock: true,
-    ver_ventas: false, crear_ventas: false, ver_finanzas: false,
-    ver_archivos: false, gestionar_usuarios: false,
-  },
-}
+// PERMISOS_LABELS y ROLES_PRESET viven en @/lib/auth/permisos — el mismo
+// módulo que usa el servidor al aceptar la invitación. Antes estaban duplicados
+// acá y podían quedar desincronizados con lo que realmente se asignaba.
 
 export default function EmpleadosPage() {
   const supabase = createClient()

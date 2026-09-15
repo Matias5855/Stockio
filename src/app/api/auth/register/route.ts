@@ -6,6 +6,7 @@ import { parseBody, RegisterInputSchema, ValidationError } from '@/lib/schemas'
 import { rateLimit, getClientIp } from '@/lib/rateLimit'
 import { from as emailFrom, replyTo } from '@/lib/email'
 import WelcomeEmail from '@/emails/WelcomeEmail'
+import { PERMISOS_OWNER } from '@/lib/auth/permisos'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,11 +54,10 @@ export async function POST(req: NextRequest) {
       org_id: org.id,
       full_name: nombre,
       role: 'owner',
-      permisos: {
-        ver_dashboard: true, ver_stock: true, ver_ventas: true,
-        crear_ventas: true, editar_stock: true, ver_finanzas: true,
-        ver_archivos: true, gestionar_usuarios: true,
-      },
+      // Todos los permisos del catálogo (src/lib/auth/permisos.ts). Se importa
+      // en vez de listarlos acá para que agregar una clave nueva no deje al
+      // dueño sin ese permiso por olvido.
+      permisos: PERMISOS_OWNER,
     })
 
     // 4. Crear suscripción trial
