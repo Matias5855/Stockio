@@ -6,6 +6,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOrgMember, requireRole, AuthError } from '@/lib/auth/requireUser'
 import { parseBody, SuscripcionInputSchema, ValidationError } from '@/lib/schemas'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Las escrituras sobre `suscripciones` van con service_role, no con el cliente
+// del usuario. La politica anterior era `USING (org_id = get_org_id())`, asi que
+// cualquier miembro de la org podia ponerse estado='activa' desde el navegador y
+// no pagar nunca. Ahora el cliente solo puede LEER; escribir es potestad del
+// servidor, que ya valido el rol antes de llegar aca.
+// Cada query filtra explicitamente por org_id/id: service_role no tiene RLS.
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +63,7 @@ export async function GET() {
     if (suscripcion?.estado === 'trial' && suscripcion?.trial_fin) {
       const trialFin = new Date(suscripcion.trial_fin)
       if (new Date() > trialFin) {
-        await supabase.from('suscripciones')
+        await createAdminClient().from('suscripciones')
           .update({ estado: 'vencida' })
           .eq('id', suscripcion.id)
         return NextResponse.json({ ...suscripcion, estado: 'vencida' })
@@ -71,7 +79,7 @@ export async function GET() {
       suscripcion?.periodo_fin &&
       new Date() > new Date(suscripcion.periodo_fin)
     ) {
-      await supabase.from('suscripciones')
+      await createAdminClient().from('suscripciones')
         .update({ estado: 'cancelada' })
         .eq('id', suscripcion.id)
       return NextResponse.json({ ...suscripcion, estado: 'cancelada' })
@@ -189,7 +197,7 @@ export async function POST(req: NextRequest) {
     // plan y suscripcion actuales — no pierde nada ni paga de nuevo.
     //
     // El trial se otorga UNA sola vez, en el registro (api/auth/register).
-    const { error: updateErr } = await supabase.from('suscripciones')
+    const { error: updateErr } = await createAdminClient().from('suscripciones')
       .update({ mp_payer_id: payer_email })
       .eq('org_id', profile.org_id)
 
@@ -197,7 +205,7 @@ export async function POST(req: NextRequest) {
     // la insertamos en estado 'vencida' para que el paywall siga activo
     // hasta que MP confirme. NUNCA en trial.
     if (updateErr) {
-      await supabase.from('suscripciones').insert({
+      await createAdminClient().from('suscripciones').insert({
         org_id: profile.org_id,
         plan_id,
         estado: 'vencida',

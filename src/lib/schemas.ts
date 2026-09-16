@@ -24,11 +24,14 @@ export type RegisterInput = z.infer<typeof RegisterInputSchema>
 export const EmpleadoRoleSchema = z.enum(['admin', 'vendedor', 'repositor'])
 export type EmpleadoRole = z.infer<typeof EmpleadoRoleSchema>
 
+// El cliente ya NO manda token ni org_name: la invitacion la crea el servidor
+// (api/empleados/invitar) despues de verificar que quien llama es el dueño.
+// Antes el navegador insertaba la fila en `invitaciones` por su cuenta, y la
+// politica solo pedia misma organizacion: cualquier empleado podia crearse una
+// invitacion con role='admin' y aceptarla.
 export const InvitarEmpleadoInputSchema = z.object({
   email: z.string().trim().toLowerCase().email('Email invalido'),
-  token: z.string().min(16, 'Token invalido').max(128).regex(/^[A-Za-z0-9_-]+$/, 'Token con caracteres invalidos'),
   role: EmpleadoRoleSchema,
-  org_name: z.string().trim().min(1).max(80),
 })
 export type InvitarEmpleadoInput = z.infer<typeof InvitarEmpleadoInputSchema>
 

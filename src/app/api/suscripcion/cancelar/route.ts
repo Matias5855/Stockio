@@ -13,6 +13,7 @@
  */
 import { NextResponse } from 'next/server'
 import { requireRole, AuthError } from '@/lib/auth/requireUser'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +83,8 @@ export async function POST() {
     if (tieneGracia) {
       // Mantener 'activa' + marcar cancelar_al_terminar. El webhook de MP
       // (que va a mandar 'cancelled') respeta este flag y no baja el acceso.
-      await supabase
+      // service_role: el cliente ya no puede escribir suscripciones.
+      await createAdminClient()
         .from('suscripciones')
         .update({ cancelar_al_terminar: true })
         .eq('id', susc.id)
@@ -95,7 +97,7 @@ export async function POST() {
     }
 
     // Sin periodo pagado vigente (estaba en trial, vencida, etc) -> cancelar ya.
-    await supabase
+    await createAdminClient()
       .from('suscripciones')
       .update({ estado: 'cancelada' })
       .eq('id', susc.id)

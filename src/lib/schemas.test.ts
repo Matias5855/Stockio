@@ -86,9 +86,7 @@ describe('RegisterInputSchema', () => {
 describe('InvitarEmpleadoInputSchema', () => {
   const valido = {
     email: 'empleado@example.com',
-    token: 'a'.repeat(32),
     role: 'vendedor' as const,
-    org_name: 'Matineta',
   }
 
   it('acepta los 3 roles validos', () => {
@@ -102,17 +100,18 @@ describe('InvitarEmpleadoInputSchema', () => {
     expect(r.success).toBe(false)
   })
 
-  it('rechaza token con caracteres invalidos (potencial XSS)', () => {
-    const r = InvitarEmpleadoInputSchema.safeParse({
-      ...valido,
-      token: '<script>alert(1)</script>aaaaaaaaaaaaaaaaa',
-    })
+  it('rechaza email invalido', () => {
+    const r = InvitarEmpleadoInputSchema.safeParse({ ...valido, email: 'no-es-un-email' })
     expect(r.success).toBe(false)
   })
 
-  it('rechaza token corto', () => {
-    const r = InvitarEmpleadoInputSchema.safeParse({ ...valido, token: 'abc' })
-    expect(r.success).toBe(false)
+  // El token ya no viaja desde el cliente: lo genera la base al insertar la
+  // invitacion del lado del servidor. Si alguien lo reintroduce en el schema,
+  // este test deberia hacerlo pensar dos veces.
+  it('ignora un token mandado por el cliente', () => {
+    const r = InvitarEmpleadoInputSchema.safeParse({ ...valido, token: 'a'.repeat(32) })
+    expect(r.success).toBe(true)
+    expect(r.success && 'token' in r.data).toBe(false)
   })
 })
 
