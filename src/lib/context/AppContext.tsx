@@ -2,9 +2,14 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+/**
+ * Antes este contexto traía `orgData` con un `select('*')` sobre
+ * `organizations` — o sea, dejaba el mp_access_token del negocio en el estado
+ * de React de todas las páginas. Y no lo consumía nadie: lo único que se usaba
+ * de esa consulta era el plan_id embebido de `suscripciones`. Se sacó.
+ */
 type AppContextType = {
   orgId: string | null
-  orgData: Record<string, unknown> | null
   userId: string | null
   role: string
   plan: string
@@ -14,7 +19,7 @@ type AppContextType = {
 }
 
 const AppContext = createContext<AppContextType>({
-  orgId: null, orgData: null, userId: null,
+  orgId: null, userId: null,
   role: 'member', plan: 'normal',
   permisos: {}, loading: true,
   refetchOrg: () => {},
@@ -23,7 +28,7 @@ const AppContext = createContext<AppContextType>({
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
   const [state, setState] = useState<Omit<AppContextType, 'refetchOrg'>>({
-    orgId: null, orgData: null, userId: null,
+    orgId: null, userId: null,
     role: 'member', plan: 'normal',
     permisos: {}, loading: true,
   })
@@ -43,17 +48,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const orgId = profile.org_id
       localStorage.setItem('stk_org_id', orgId)
 
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('*, suscripciones(plan_id, estado, trial_fin)')
-        .eq('id', orgId).single()
+      // Se consulta `suscripciones` directo en vez de embeberla dentro de
+      // organizations: es el único dato que se usaba de aquella consulta.
+      const { data: suscripcion } = await supabase
+        .from('suscripciones')
+        .select('plan_id')
+        .eq('org_id', orgId).single()
 
-      const planId = (org as { suscripciones?: Array<{ plan_id?: string }> } | null)
-        ?.suscripciones?.[0]?.plan_id ?? 'normal'
+      const planId = (suscripcion as { plan_id?: string } | null)?.plan_id ?? 'normal'
 
       setState({
         orgId,
-        orgData: org as Record<string, unknown> | null,
         userId: user.id,
         role: profile.role,
         plan: planId,

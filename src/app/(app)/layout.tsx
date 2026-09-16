@@ -205,7 +205,7 @@ function AppLayoutInner() {
         if (!profile?.org_id) return
 
         const { data: org } = await supabase
-          .from('organizations')
+          .from('mi_organizacion')
           .select('onboarding_completado, name')
           .eq('id', profile.org_id)
           .single()
@@ -362,8 +362,12 @@ function AppLayoutInner() {
 
   return (
     <NavContext.Provider value={navValue}>
-      {/* Onboarding wizard — overlay sobre toda la app en primer login */}
-      {showOnboarding && onboardingOrgId && (
+      {/* Onboarding wizard — overlay sobre toda la app en primer login.
+          Solo para el dueño: el wizard escribe datos del negocio y ahora
+          organizations solo lo puede actualizar el owner (rls_fase_b3). A un
+          empleado que entrara antes de completarlo le aparecía igual y le
+          habría fallado al guardar. */}
+      {showOnboarding && onboardingOrgId && role === 'owner' && (
         <OnboardingWizard
           orgId={onboardingOrgId}
           initialOrgName={orgNombre !== 'Gestión PyME' ? orgNombre : undefined}

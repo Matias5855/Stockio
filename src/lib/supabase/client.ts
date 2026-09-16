@@ -61,7 +61,7 @@ export async function getOrgId(): Promise<string | null> {
 
         // No bloquear el retorno con la consulta del nombre de la org
         supabase
-          .from('organizations')
+          .from('mi_organizacion')
           .select('nombre')
           .eq('id', profile.org_id)
           .single()

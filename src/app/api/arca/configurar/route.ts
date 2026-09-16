@@ -11,6 +11,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, AuthError } from '@/lib/auth/requireUser'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
+// legibles con el cliente del usuario: se les revoco el SELECT sobre esas
+// columnas (ver db/rls_fase_b3_secretos.sql). Esta ruta los necesita de
+// verdad, asi que usa service_role — DESPUES de validar el rol arriba, y
+// filtrando siempre por el org_id del profile verificado, nunca del body.
 import { parseBody, ValidationError } from '@/lib/schemas'
 import { encryptSecret, isEncryptionConfigured } from '@/lib/crypto'
 
@@ -27,8 +34,8 @@ const ArcaConfigSchema = z.object({
 
 export async function GET() {
   try {
-    const { supabase, profile } = await requireRole(['owner'])
-    const { data: org } = await supabase
+    const { profile } = await requireRole(['owner'])
+    const { data: org } = await createAdminClient()
       .from('organizations')
       .select('arca_activado, arca_cuit, arca_punto_venta, arca_ambiente, arca_cert_pem_enc')
       .eq('id', profile.org_id)
@@ -53,7 +60,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { supabase, profile } = await requireRole(['owner'])
+    const { profile } = await requireRole(['owner'])
 
     if (!isEncryptionConfigured()) {
       return NextResponse.json({
@@ -79,7 +86,7 @@ export async function POST(req: NextRequest) {
     const certEnc = encryptSecret(data.cert_pem)
     const keyEnc = encryptSecret(data.private_key_pem)
 
-    const { error } = await supabase
+    const { error } = await createAdminClient()
       .from('organizations')
       .update({
         arca_activado: data.activado,

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
+// legibles con el cliente del usuario: se les revoco el SELECT sobre esas
+// columnas (ver db/rls_fase_b3_secretos.sql). Esta ruta los necesita de
+// verdad, asi que usa service_role — DESPUES de validar el rol arriba, y
+// filtrando siempre por el org_id del profile verificado, nunca del body.
 import { parseBody, LinkPagoInputSchema, ValidationError } from '@/lib/schemas'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // El cobro tiene que ir a la cuenta MP de la PyME, no a la de Stockio.
     // Si no esta conectada, bloqueamos con un mensaje claro.
-    const { data: org } = await supabase
+    const { data: org } = await createAdminClient()
       .from('organizations')
       .select('mp_access_token, mp_connected')
       .eq('id', profile.org_id)

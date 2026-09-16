@@ -159,7 +159,8 @@ export default function VentasPage() {
     const orgID = localStorage.getItem('stk_org_id')
 
     const { data: org } = await supabase
-      .from('organizations')
+      // Vista sin secretos: la factura solo necesita los datos fiscales.
+      .from('mi_organizacion')
       .select('*')
       .eq('id', orgID)
       .single()

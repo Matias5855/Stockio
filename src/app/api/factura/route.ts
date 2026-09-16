@@ -7,6 +7,13 @@ import { render } from '@react-email/components'
 import { crearARCAServiceCon, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
 import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
+// legibles con el cliente del usuario: se les revoco el SELECT sobre esas
+// columnas (ver db/rls_fase_b3_secretos.sql). Esta ruta los necesita de
+// verdad, asi que usa service_role — DESPUES de validar el rol arriba, y
+// filtrando siempre por el org_id del profile verificado, nunca del body.
 import { parseBody, FacturaInputSchema, ValidationError } from '@/lib/schemas'
 import { decryptSecret } from '@/lib/crypto'
 import { from as emailFrom, replyTo } from '@/lib/email'
@@ -41,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Obtener datos del negocio
-    const { data: org } = await supabase
+    const { data: org } = await createAdminClient()
       .from('organizations')
       .select('*')
       .eq('id', profile.org_id)

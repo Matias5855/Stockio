@@ -49,7 +49,9 @@ export default function ConfiguracionPage() {
         .from('profiles').select('org_id').eq('id', user.id).single()
       if (!profile?.org_id) return
       const { data: orgData } = await supabase
-        .from('organizations').select('*').eq('id', profile.org_id).single()
+        // mi_organizacion: misma info menos los secretos (mp_access_token,
+        // certificados de ARCA). Ver db/rls_fase_b3_secretos.sql.
+        .from('mi_organizacion').select('*').eq('id', profile.org_id).single()
       setOrg(orgData as Organization)
       setLoading(false)
     }

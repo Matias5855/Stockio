@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, AuthError } from '@/lib/auth/requireUser'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
+// legibles con el cliente del usuario: se les revoco el SELECT sobre esas
+// columnas (ver db/rls_fase_b3_secretos.sql). Esta ruta los necesita de
+// verdad, asi que usa service_role — DESPUES de validar el rol arriba, y
+// filtrando siempre por el org_id del profile verificado, nunca del body.
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +15,7 @@ export async function GET(req: NextRequest) {
     // Solo el owner puede completar la conexion MP de su org.
     // Ademas comparamos el orgId del state contra el del profile para evitar
     // que un owner de org A complete el flujo con state apuntando a org B.
-    const { profile, supabase } = await requireRole(['owner'])
+    const { profile } = await requireRole(['owner'])
 
     const { searchParams } = req.nextUrl
     const code = searchParams.get('code')
@@ -41,7 +48,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/configuracion?mp=error', req.url))
     }
 
-    await supabase.from('organizations').update({
+    await createAdminClient().from('organizations').update({
       mp_access_token: tokenData.access_token,
       mp_refresh_token: tokenData.refresh_token,
       mp_user_id: String(tokenData.user_id),
