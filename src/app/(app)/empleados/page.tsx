@@ -73,26 +73,25 @@ export default function EmpleadosPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // La invitacion la crea el SERVIDOR. El cliente ya no inserta en
+  // `invitaciones` ni elige el token (ver db/rls_fase_b2.sql): antes podia
+  // fabricarse una invitacion con role='admin' y aceptarla desde /invite.
+  // Ademas, ahora el error del envio se ve: antes el fetch no se chequeaba y
+  // el cartel decia "enviada" aunque el mail nunca hubiera salido.
   const invitar = async () => {
     if (!form.email) return
-    const orgId = localStorage.getItem('stk_org_id')
-    const { data, error } = await supabase.from('invitaciones').insert({
-      org_id: orgId,
-      email: form.email,
-      role: form.role,
-    }).select().single()
-    if (error) { setMsg({ text: error.message, ok: false }); return }
 
-    await fetch('/api/empleados/invitar', {
+    const res = await fetch('/api/empleados/invitar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: form.email,
-        token: (data as { token: string }).token,
-        role: form.role,
-        org_name: localStorage.getItem('stk_org_nombre') ?? 'Tu negocio',
-      }),
+      body: JSON.stringify({ email: form.email, role: form.role }),
     })
+    const data = await res.json().catch(() => null)
+
+    if (!res.ok) {
+      setMsg({ text: data?.error ?? 'No se pudo enviar la invitación', ok: false })
+      return
+    }
 
     setMsg({ text: `Invitación enviada a ${form.email}`, ok: true })
     setModal(false)
@@ -101,9 +100,15 @@ export default function EmpleadosPage() {
     setTimeout(() => setMsg(null), 4000)
   }
 
+  // Va por RPC y no por UPDATE directo: el cliente ya no puede escribir
+  // profiles (ver db/rls_fase_b1_profiles.sql). Antes, la política que
+  // habilitaba esta pantalla habilitaba tambien que cualquier empleado se
+  // editara su propia fila y se pusiera role='owner'.
   const actualizarPermisos = async (empleadoId: string, nuevosPermisos: Record<string, boolean>) => {
-    const { error } = await supabase
-      .from('profiles').update({ permisos: nuevosPermisos }).eq('id', empleadoId)
+    const { error } = await supabase.rpc('actualizar_permisos_empleado', {
+      p_empleado_id: empleadoId,
+      p_permisos: nuevosPermisos,
+    })
     if (error) setMsg({ text: error.message, ok: false })
     else { setMsg({ text: 'Permisos actualizados', ok: true }); fetchData(); setEditando(null) }
     setTimeout(() => setMsg(null), 3000)
