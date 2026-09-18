@@ -59,14 +59,20 @@ export async function getOrgId(): Promise<string | null> {
         localStorage.setItem('stk_org_id', profile.org_id)
         orgIdCache = profile.org_id
 
-        // No bloquear el retorno con la consulta del nombre de la org
+        // No bloquear el retorno con la consulta del nombre de la org.
+        // La columna es `name`, no `nombre`: consultaba una columna inexistente,
+        // el .then() no miraba el error y fallaba en silencio. Este es el unico
+        // camino que re-hidrata stk_org_nombre cuando el localStorage esta vacio
+        // (dispositivo nuevo, otro navegador), asi que la sidebar decia
+        // "Gestion PyME" y los Excel/PDF exportados salian como "Negocio".
         supabase
           .from('mi_organizacion')
-          .select('nombre')
+          .select('name')
           .eq('id', profile.org_id)
           .single()
-          .then(({ data: org }) => {
-            if (org?.nombre) localStorage.setItem('stk_org_nombre', org.nombre)
+          .then(({ data: org, error }) => {
+            if (error) { console.warn('[getOrgId] nombre de org:', error.message); return }
+            if (org?.name) localStorage.setItem('stk_org_nombre', org.name)
           })
 
         return profile.org_id

@@ -207,7 +207,7 @@ export default function VentasPage() {
       nro_factura: v.nro_factura,
       fecha: v.fecha,
       cliente_nombre: v.cliente_nombre ?? 'Consumidor Final',
-      negocio_nombre: (orgData.name as string) ?? (orgData.nombre as string) ?? 'Mi Negocio',
+      negocio_nombre: (orgData.name as string) ?? 'Mi Negocio',
       negocio_cuit: orgData.cuit as string | undefined,
       negocio_direccion: orgData.direccion as string | undefined,
       negocio_telefono: orgData.telefono as string | undefined,
