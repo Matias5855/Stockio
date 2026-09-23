@@ -49,11 +49,18 @@ describe('catálogo de permisos', () => {
     }
   })
 
-  it('el vendedor puede registrar ventas pero no eliminarlas', () => {
-    // Control contra el faltante: quien cobra en el mostrador no debería poder
-    // borrar la venta después.
+  it('ningún rol invitable puede eliminar ventas', () => {
+    // Control contra el faltante: borrar una venta es la forma de tapar un
+    // faltante de caja, así que queda como acto exclusivo del dueño. Ni
+    // siquiera el admin — decisión explícita del dueño el 2026-09-22.
+    for (const [rol, permisos] of Object.entries(ROLES_PRESET)) {
+      expect(permisos.eliminar_ventas, `"${rol}" no debería eliminar ventas`).toBe(false)
+    }
+  })
+
+  it('el vendedor registra y cobra ventas', () => {
     expect(ROLES_PRESET.vendedor.crear_ventas).toBe(true)
-    expect(ROLES_PRESET.vendedor.eliminar_ventas).toBe(false)
+    expect(ROLES_PRESET.vendedor.editar_ventas).toBe(true)
   })
 })
 

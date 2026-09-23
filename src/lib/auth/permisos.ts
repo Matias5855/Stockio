@@ -54,9 +54,11 @@ export const PERMISOS_OWNER: Permisos =
 export const ROLES_PRESET: Record<string, Permisos> = {
   // Mano derecha del dueño. Todo menos la plata de la suscripción y el alta de
   // gente: Configuración guarda el token de Mercado Pago y los datos fiscales.
+  // Tampoco elimina ventas: borrar una venta es la forma de tapar un faltante,
+  // así que queda como acto exclusivo del dueño (decisión del 2026-09-22).
   admin: {
     ver_dashboard: true, ver_stock: true, editar_stock: true,
-    ver_ventas: true, crear_ventas: true, editar_ventas: true, eliminar_ventas: true,
+    ver_ventas: true, crear_ventas: true, editar_ventas: true, eliminar_ventas: false,
     ver_finanzas: true,
     ver_cuotas: true, gestionar_cuotas: true,
     ver_archivos: true, ver_historial: true,
