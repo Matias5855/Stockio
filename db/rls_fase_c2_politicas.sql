@@ -24,7 +24,8 @@
 -- CAMBIOS DE COMPORTAMIENTO A REVISAR (no son efectos colaterales, son
 -- consecuencia de los presets definidos en 1.4.E):
 --   · repositor GANA editar productos            <- el arreglo
---   · admin GANA borrar ventas (hoy solo owner)  <- preset: eliminar_ventas
+--   · borrar ventas queda SOLO para el dueño    <- preset: eliminar_ventas=false
+--     en los tres roles invitables (ajuste del 2026-09-22)
 --   · repositor PIERDE ver ventas                <- preset: ver_ventas false
 --   · vendedor y repositor PIERDEN ver archivos  <- preset: ver_archivos false
 --   · solo quien tenga ver_historial ve el historial (antes, toda la org)
@@ -36,7 +37,8 @@
 -- justo lo contrario de para qué existe.
 --
 -- Requiere db/permisos_completos.sql ya corrido.
--- Correr COMPLETO en Supabase → SQL Editor. Es idempotente.
+-- Correr COMPLETO en Supabase → SQL Editor. Es idempotente: cada politica se
+-- borra por nombre antes de crearse, asi que se puede re-correr sin error.
 -- ============================================================================
 
 BEGIN;
@@ -111,10 +113,12 @@ CREATE POLICY archivos_delete ON public.archivos
 -- 5. historial ---------------------------------------------------------------
 DROP POLICY IF EXISTS historial_org ON public.historial;
 
+DROP POLICY IF EXISTS historial_select ON public.historial;
 CREATE POLICY historial_select ON public.historial
   FOR SELECT USING (org_id = get_org_id() AND tiene_permiso('ver_historial'));
 
 -- Sin chequeo de permiso, a propósito (ver el comentario del encabezado).
+DROP POLICY IF EXISTS historial_insert ON public.historial;
 CREATE POLICY historial_insert ON public.historial
   FOR INSERT WITH CHECK (org_id = get_org_id());
 

@@ -46,8 +46,19 @@ BEGIN;
 -- 1. Privilegios por defecto para TABLAS nuevas ------------------------------
 -- Los defaults están asociados al rol que crea el objeto, así que hay que
 -- tocarlos para cada rol que ya tenga defaults configurados en el esquema.
+-- Solo se pueden cambiar los defaults de un rol del que seas miembro. En
+-- Supabase el editor corre como `postgres`, que NO puede tocar los de
+-- `supabase_admin`. Eso no es un problema: los defaults que importan son los
+-- del rol que crea las tablas de la aplicacion, y ese es `postgres` — tanto
+-- desde el Table Editor como desde el SQL Editor. Los de supabase_admin
+-- aplican a objetos internos de la plataforma, que no exponemos.
+-- Por eso cada rol va en su propio bloque con EXCEPTION: si uno falla por
+-- permisos se informa y se sigue, en vez de abortar todo el script.
 DO $$
-DECLARE r record;
+DECLARE
+  r record;
+  corregidos text[] := '{}';
+  omitidos   text[] := '{}';
 BEGIN
   FOR r IN
     SELECT DISTINCT pg_get_userbyid(defaclrole) AS rol
@@ -55,15 +66,29 @@ BEGIN
      WHERE defaclnamespace = 'public'::regnamespace
        AND defaclobjtype = 'r'
   LOOP
-    EXECUTE format(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public
-         REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLES FROM anon, authenticated',
-      r.rol);
-    EXECUTE format(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public
-         REVOKE ALL ON TABLES FROM anon',
-      r.rol);
+    BEGIN
+      EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public
+           REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLES FROM anon, authenticated',
+        r.rol);
+      EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public
+           REVOKE ALL ON TABLES FROM anon',
+        r.rol);
+      corregidos := corregidos || r.rol;
+    EXCEPTION WHEN insufficient_privilege THEN
+      omitidos := omitidos || r.rol;
+    END;
   END LOOP;
+
+  RAISE NOTICE 'Defaults corregidos para: %', COALESCE(array_to_string(corregidos, ', '), '(ninguno)');
+  IF array_length(omitidos, 1) > 0 THEN
+    RAISE NOTICE 'Omitidos por falta de permiso (esperable): %', array_to_string(omitidos, ', ');
+  END IF;
+
+  IF NOT ('postgres' = ANY(corregidos)) THEN
+    RAISE WARNING 'No se pudieron corregir los defaults de postgres — es el rol que importa. Revisalo.';
+  END IF;
 END $$;
 
 -- Y para el rol con el que se está corriendo esto, por si todavía no tiene

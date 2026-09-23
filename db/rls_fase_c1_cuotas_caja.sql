@@ -75,17 +75,21 @@ CREATE POLICY ventas_update ON public.ventas
 -- 3. cuotas_ventas -----------------------------------------------------------
 DROP POLICY IF EXISTS cuotas_ventas_policy ON public.cuotas_ventas;
 
+DROP POLICY IF EXISTS cuotas_ventas_select ON public.cuotas_ventas;
 CREATE POLICY cuotas_ventas_select ON public.cuotas_ventas
   FOR SELECT USING (org_id = get_org_id() AND tiene_permiso('ver_cuotas'));
 
+DROP POLICY IF EXISTS cuotas_ventas_insert ON public.cuotas_ventas;
 CREATE POLICY cuotas_ventas_insert ON public.cuotas_ventas
   FOR INSERT WITH CHECK (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 
+DROP POLICY IF EXISTS cuotas_ventas_update ON public.cuotas_ventas;
 CREATE POLICY cuotas_ventas_update ON public.cuotas_ventas
   FOR UPDATE
   USING      (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'))
   WITH CHECK (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 
+DROP POLICY IF EXISTS cuotas_ventas_delete ON public.cuotas_ventas;
 CREATE POLICY cuotas_ventas_delete ON public.cuotas_ventas
   FOR DELETE USING (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 
@@ -96,17 +100,21 @@ CREATE POLICY cuotas_ventas_delete ON public.cuotas_ventas
 -- gestionar_cuotas, que es justo lo que pide la política de abajo.
 DROP POLICY IF EXISTS cuota_pagos_policy ON public.cuota_pagos;
 
+DROP POLICY IF EXISTS cuota_pagos_select ON public.cuota_pagos;
 CREATE POLICY cuota_pagos_select ON public.cuota_pagos
   FOR SELECT USING (org_id = get_org_id() AND tiene_permiso('ver_cuotas'));
 
+DROP POLICY IF EXISTS cuota_pagos_insert ON public.cuota_pagos;
 CREATE POLICY cuota_pagos_insert ON public.cuota_pagos
   FOR INSERT WITH CHECK (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 
+DROP POLICY IF EXISTS cuota_pagos_update ON public.cuota_pagos;
 CREATE POLICY cuota_pagos_update ON public.cuota_pagos
   FOR UPDATE
   USING      (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'))
   WITH CHECK (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 
+DROP POLICY IF EXISTS cuota_pagos_delete ON public.cuota_pagos;
 CREATE POLICY cuota_pagos_delete ON public.cuota_pagos
   FOR DELETE USING (org_id = get_org_id() AND tiene_permiso('gestionar_cuotas'));
 

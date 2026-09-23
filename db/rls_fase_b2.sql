@@ -43,11 +43,13 @@ REVOKE INSERT, UPDATE, DELETE ON public.suscripciones FROM authenticated;
 DROP POLICY IF EXISTS invitaciones_org ON public.invitaciones;
 
 -- Listar las pendientes en la pantalla de Empleados.
+DROP POLICY IF EXISTS invitaciones_select ON public.invitaciones;
 CREATE POLICY invitaciones_select ON public.invitaciones
   FOR SELECT
   USING (org_id = get_org_id() AND tiene_permiso('gestionar_usuarios'));
 
 -- Cancelar una invitación pendiente.
+DROP POLICY IF EXISTS invitaciones_delete ON public.invitaciones;
 CREATE POLICY invitaciones_delete ON public.invitaciones
   FOR DELETE
   USING (org_id = get_org_id() AND tiene_permiso('gestionar_usuarios'));
