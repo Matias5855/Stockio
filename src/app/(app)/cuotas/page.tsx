@@ -127,28 +127,42 @@ export default function CuotasPage() {
     fetchCuotas()
   }
 
+  // Cobrar una cuota son cuatro escrituras y NINGUNA chequeaba su error. Si la
+  // del movimiento fallaba, la cuota quedaba marcada como pagada pero la plata
+  // no aparecia en Finanzas, sin ningun aviso. Ahora cada paso se verifica y,
+  // si algo falla despues de marcar el pago, se dice exactamente que quedo sin
+  // registrar: es plata, el usuario tiene que poder corregirlo a mano.
   const registrarPago = async (cuotaPagoId: string, cuotaVentaId: string, monto: number) => {
     const orgId = localStorage.getItem('stk_org_id')
-    await supabase.from('cuota_pagos').update({
+
+    const { error: errPago } = await supabase.from('cuota_pagos').update({
       estado: 'pagada',
       fecha_pago: new Date().toISOString().split('T')[0],
       metodo_pago: 'efectivo',
     }).eq('id', cuotaPagoId)
+
+    // Si este falla no se hizo nada todavia: se corta y no queda estado a medias.
+    if (errPago) {
+      alert(`No se pudo registrar el pago: ${errPago.message}`)
+      return
+    }
 
     const cv = cuotas.find(c => c.id === cuotaVentaId)
     if (cv) {
       const nuevoPagado = cv.monto_pagado + monto
       const nuevasCuotasPagadas = cv.cuotas_pagadas + 1
       const completada = nuevasCuotasPagadas >= cv.cantidad_cuotas
+      const pendientes: string[] = []
 
-      await supabase.from('cuotas_ventas').update({
+      const { error: errPlan } = await supabase.from('cuotas_ventas').update({
         monto_pagado: nuevoPagado,
         cuotas_pagadas: nuevasCuotasPagadas,
         estado: completada ? 'completada' : 'activa',
       }).eq('id', cuotaVentaId)
+      if (errPlan) pendientes.push('el total del plan de pago')
 
       if (orgId) {
-        await supabase.from('movimientos').insert({
+        const { error: errMov } = await supabase.from('movimientos').insert({
           descripcion: `Cobro cuota ${cv.cliente_nombre} (${nuevasCuotasPagadas}/${cv.cantidad_cuotas})`,
           tipo: 'ingreso',
           categoria_nombre: 'Cuotas',
@@ -157,14 +171,23 @@ export default function CuotasPage() {
           org_id: orgId,
           venta_id: null,
         })
+        if (errMov) pendientes.push('el ingreso en Finanzas')
       }
 
       // Si se completaron todas las cuotas → marcar la venta vinculada como cobrada
       if (completada) {
         const cuotaIdShort = String(cuotaVentaId).slice(0, 8).toUpperCase()
-        await supabase.from('ventas')
+        const { error: errVenta } = await supabase.from('ventas')
           .update({ estado: 'cobrada' })
           .eq('nro_factura', `CTA-${cuotaIdShort}`)
+        if (errVenta) pendientes.push('la venta vinculada como cobrada')
+      }
+
+      if (pendientes.length > 0) {
+        alert(
+          `El pago de $${monto.toLocaleString('es-AR')} quedo registrado, pero no se pudo actualizar ` +
+          `${pendientes.join(' ni ')}. Revisalo a mano o pedile al dueño que lo corrija.`
+        )
       }
 
       logHistorial({
