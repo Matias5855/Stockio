@@ -22,7 +22,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient, getOrgId } from '@/lib/supabase/client'
-import { saveLocal, getLocal } from '@/lib/db/indexeddb'
+import { cacheLocal, getLocal } from '@/lib/db/indexeddb'
 import { syncManager } from '@/lib/sync/syncManager'
 import { debounce } from '@/lib/utils/debounce'
 
@@ -120,9 +120,12 @@ export function useTableSync<T extends { id: string }>(opts: UseTableSyncOptions
       const lista = (rows ?? []) as unknown as T[]
       if (mountedRef.current) setData(lista)
 
-      // Persistir en IndexedDB para uso offline (paralelo, errores ignorados)
+      // Persistir en IndexedDB para uso offline (paralelo, errores ignorados).
+      // cacheLocal y NO saveLocal: esto es cache de lo que ya esta en el
+      // servidor, no un cambio del usuario. Con saveLocal cada fetch encolaba
+      // una fila por registro para subirla de vuelta.
       await Promise.all(
-        lista.map(row => saveLocal(table, row as unknown as { id: string }, 'update').catch(() => {}))
+        lista.map(row => cacheLocal(table, row as unknown as { id: string }).catch(() => {}))
       )
     } catch (err) {
       console.warn(`[useTableSync:${table}] fetch fallo, usando local:`, err)

@@ -43,7 +43,8 @@ export function useVentas() {
 
   const supabase = createClient()
 
-  // Recuperar ventas offline pendientes del localStorage (backup adicional al IndexedDB)
+  // Recuperar ventas offline pendientes del localStorage (backup adicional al
+  // IndexedDB). Solo se inyectan las que todavia NO estan en el servidor.
   useEffect(() => {
     try {
       const pending = JSON.parse(localStorage.getItem('stk_venta_items') || '[]')
@@ -56,6 +57,29 @@ export function useVentas() {
       }
     } catch {}
   }, [setVentas])
+
+  // Limpiar del backup las ventas que ya llegaron al servidor.
+  //
+  // `stk_venta_items` se escribia al crear una venta offline y NUNCA se
+  // vaciaba: cada venta hecha sin conexion quedaba ahi para siempre y se
+  // re-inyectaba en la lista en cada montaje. Como la deduplicacion es por id,
+  // alcanzaba con que el id local y el del servidor no coincidieran para que
+  // la misma venta apareciera dos veces, y ningun refresh lo arreglaba.
+  useEffect(() => {
+    if (ventas.length === 0) return
+    try {
+      const pending = JSON.parse(localStorage.getItem('stk_venta_items') || '[]') as Venta[]
+      if (pending.length === 0) return
+      const enServidor = new Set(ventas.map(v => v.id))
+      const nroEnServidor = new Set(ventas.map(v => v.nro_factura))
+      // Se descarta tanto por id como por numero de factura: si la venta se
+      // sincronizo con otro id, el numero la identifica igual.
+      const quedan = pending.filter(v => !enServidor.has(v.id) && !nroEnServidor.has(v.nro_factura))
+      if (quedan.length !== pending.length) {
+        localStorage.setItem('stk_venta_items', JSON.stringify(quedan))
+      }
+    } catch {}
+  }, [ventas])
 
   const crearVenta = async (
     venta: Omit<Venta, 'id' | 'nro_factura' | 'created_at'>,

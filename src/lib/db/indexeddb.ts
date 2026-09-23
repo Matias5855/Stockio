@@ -51,6 +51,20 @@ export async function saveLocal(
   ])
 }
 
+/**
+ * Guarda una fila que VINO del servidor, sin encolarla para subir.
+ *
+ * saveLocal() siempre escribe en sync_queue, porque asume que el cambio lo
+ * hizo el usuario. Para cachear lo que ya esta en el servidor eso esta mal:
+ * agenda devolverle al servidor lo que el mismo acaba de mandar. Como el id
+ * de la cola lleva Date.now(), cada fetch creaba entradas NUEVAS y la cola
+ * crecia sin limite (de ahi los "N cambios sin sincronizar" fantasma).
+ */
+export async function cacheLocal(tabla: string, data: { id: string; [k: string]: unknown }) {
+  const database = await getLocalDB()
+  await database.put(tabla, { ...data, syncStatus: 'synced' })
+}
+
 export async function getLocal(tabla: string, orgId: string) {
   const database = await getLocalDB()
   return database.getAllFromIndex(tabla, 'orgId', orgId)

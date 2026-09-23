@@ -140,11 +140,13 @@ function AppLayoutInner() {
   const [collapsed, setCollapsed] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
   // Sesion revocada desde otro dispositivo: los cambios locales no pueden subir
-  // hasta volver a iniciar sesion. pendientesSync es cuantos estan esperando.
+  // hasta volver a iniciar sesion.
   const [requiereReauth, setRequiereReauth] = useState(false)
-  const [pendientesSync, setPendientesSync] = useState(0)
   // Otro dispositivo se quedó con la sesión de esta misma cuenta.
   const [sesionDesplazada, setSesionDesplazada] = useState(false)
+  // El aviso de reautenticación se puede cerrar. Vuelve a aparecer solo si la
+  // bandera se apaga y se vuelve a prender (o sea, ante un aviso NUEVO).
+  const [avisoReauthCerrado, setAvisoReauthCerrado] = useState(false)
   const [orgNombre, setOrgNombre] = useState('Gestión PyME')
   const [suscripcion, setSuscripcion] = useState<SuscripcionInfo | null>(null)
   const [suscripcionLoaded, setSuscripcionLoaded] = useState(false)
@@ -159,8 +161,11 @@ function AppLayoutInner() {
     setIsOffline(!navigator.onLine)
 
     const refrescarReauth = () => {
-      setRequiereReauth(syncManager.requiereReautenticacion)
-      syncManager.contarPendientes().then(setPendientesSync)
+      const requiere = syncManager.requiereReautenticacion
+      setRequiereReauth(prev => {
+        if (requiere && !prev) setAvisoReauthCerrado(false)
+        return requiere
+      })
     }
     refrescarReauth()
     window.addEventListener(SYNC_AUTH_EVENT, refrescarReauth)
@@ -395,23 +400,34 @@ function AppLayoutInner() {
         {/* Banner sesion revocada — va arriba de todo y en rojo porque, a
             diferencia del banner offline, aca los cambios NO se estan
             guardando en el servidor y hace falta que el usuario actue. */}
-        {requiereReauth && (
+        {requiereReauth && !avisoReauthCerrado && (
           <div style={{
             background: COLORS.danger, color: '#FFFFFF', padding: '10px 20px',
-            fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0, zIndex: 100,
+            fontSize: 13, fontWeight: 600, flexShrink: 0, zIndex: 100,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap',
           }}>
-            <span>
-              ⚠ Tu sesión se cerró en otro dispositivo.
-              {pendientesSync > 0
-                ? ` Tenés ${pendientesSync} cambio${pendientesSync > 1 ? 's' : ''} sin sincronizar — no se pierden, se suben cuando vuelvas a entrar.`
-                : ' Iniciá sesión de nuevo para seguir trabajando.'}
+            <span style={{ textAlign: 'center' }}>
+              ⚠ Tu sesión se cerró en otro dispositivo. Iniciá sesión de nuevo
+              para seguir sincronizando — lo que hayas cargado acá no se pierde.
             </span>
             <button onClick={handleReautenticar} style={{
               background: '#FFFFFF', color: COLORS.danger, border: 'none',
               borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
             }}>
               Iniciar sesión
+            </button>
+            {/* Cerrable: el aviso es importante pero no urgente, y tenerlo
+                clavado arriba de todo mientras trabajás es peor que útil. */}
+            <button
+              onClick={() => setAvisoReauthCerrado(true)}
+              aria-label="Cerrar aviso"
+              style={{
+                background: 'none', border: 'none', color: '#FFFFFF',
+                fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: '0 4px',
+                marginLeft: 'auto', opacity: 0.85,
+              }}
+            >
+              ×
             </button>
           </div>
         )}

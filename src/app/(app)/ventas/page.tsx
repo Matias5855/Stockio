@@ -154,6 +154,20 @@ export default function VentasPage() {
     }
   }
 
+  // deleteVenta() lanza si la base rechaza, y acá nadie lo agarraba: el botón
+  // simplemente no hacía nada y no había forma de saber por qué. Quinto caso
+  // del mismo patrón en este proyecto (sync offline, nombre del negocio, cobro
+  // de cuotas, invitar).
+  const borrarVenta = async (id: string) => {
+    try {
+      await deleteVenta(id)
+      setMsg({ text: 'Venta eliminada', ok: true })
+    } catch (e: unknown) {
+      setMsg({ text: `No se pudo eliminar: ${e instanceof Error ? e.message : 'error desconocido'}`, ok: false })
+    }
+    setTimeout(() => setMsg(null), 6000)
+  }
+
   const descargarPDF = async (v: VentaRow) => {
     const supabase = createClient()
     const orgID = localStorage.getItem('stk_org_id')
@@ -429,7 +443,7 @@ export default function VentasPage() {
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.secondary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >✉</button>
                           {puedeEliminar && (
-                          <button onClick={() => { if (confirm('¿Eliminar esta venta?')) deleteVenta(v.id) }} title="Eliminar"
+                          <button onClick={() => { if (confirm('¿Eliminar esta venta?')) borrarVenta(v.id) }} title="Eliminar"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 18, padding: 6, borderRadius: 6, lineHeight: 1 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.danger; e.currentTarget.style.background = '#FFF1F2' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
