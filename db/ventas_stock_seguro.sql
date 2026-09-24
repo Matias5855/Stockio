@@ -153,7 +153,7 @@ CREATE OR REPLACE FUNCTION restaurar_stock_de_venta(p_venta_id uuid)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
   UPDATE productos p
-  SET cantidad = cantidad + vi.cantidad
+  SET cantidad = p.cantidad + vi.cantidad   -- p. explicito: sin el alias, `cantidad` es ambiguo
   FROM venta_items vi
   WHERE vi.venta_id = p_venta_id AND vi.producto_id = p.id;
 END;
@@ -163,7 +163,7 @@ CREATE OR REPLACE FUNCTION descontar_stock_de_venta(p_venta_id uuid)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
   UPDATE productos p
-  SET cantidad = cantidad - vi.cantidad
+  SET cantidad = p.cantidad - vi.cantidad   -- p. explicito: sin el alias, `cantidad` es ambiguo
   FROM venta_items vi
   WHERE vi.venta_id = p_venta_id AND vi.producto_id = p.id;
 END;
