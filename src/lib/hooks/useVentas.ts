@@ -19,6 +19,9 @@ export type Venta = {
   cliente_nombre: string | null
   fecha: string
   estado: 'cobrada' | 'pendiente' | 'cancelada'
+  // Como pago el cliente: efectivo, debito, credito, transferencia,
+  // mercadopago. NULL si la venta quedo a cobrar.
+  metodo_pago?: string | null
   total: number
   subtotal: number
   descuento: number
@@ -105,6 +108,7 @@ export function useVentas() {
           cliente_nombre: venta.cliente_nombre,
           fecha: venta.fecha,
           estado: venta.estado,
+          metodo_pago: venta.metodo_pago ?? null,
           subtotal: venta.subtotal,
           descuento: venta.descuento,
           total: venta.total,

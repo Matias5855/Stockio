@@ -13,6 +13,25 @@ import { usePermiso } from '@/lib/auth/usePermiso'
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false })
 
 const fmt = (n: number) => '$' + n.toLocaleString('es-AR')
+
+/**
+ * Como paga el cliente. 'cuotas' no es un medio de pago sino lo contrario —
+ * la venta NO se cobra ahora — pero en el mostrador se elige en el mismo
+ * momento y con la misma pregunta, asi que va en la misma lista.
+ */
+const METODOS_PAGO = [
+  { id: 'efectivo',      label: 'Efectivo',       icon: '\u{1F4B5}' },
+  { id: 'debito',        label: 'D\u00e9bito',         icon: '\u{1F4B3}' },
+  { id: 'credito',       label: 'Cr\u00e9dito',        icon: '\u{1F4B3}' },
+  { id: 'transferencia', label: 'Transferencia',  icon: '\u{1F3E6}' },
+  { id: 'mercadopago',   label: 'Mercado Pago',   icon: '\u{1F4F1}' },
+  { id: 'cuotas',        label: 'Queda a cobrar', icon: '\u{1F553}' },
+] as const
+
+type MetodoPago = typeof METODOS_PAGO[number]['id']
+
+const METODO_LABEL: Record<string, string> =
+  Object.fromEntries(METODOS_PAGO.map(m => [m.id, m.label]))
 const fmtK = (n: number) => n >= 1_000_000 ? '$' + (n/1_000_000).toFixed(1) + 'M' : n >= 1000 ? '$' + (n/1000).toFixed(0) + 'k' : '$' + n
 
 type VentaItem = {
@@ -32,6 +51,7 @@ type VentaRow = {
   descuento: number
   notas?: string | null
   estado: 'cobrada' | 'pendiente' | 'cancelada'
+  metodo_pago?: string | null
   venta_items?: VentaItem[]
 }
 
@@ -106,8 +126,13 @@ export default function VentasPage() {
 
   const [form, setForm] = useState({
     cliente_nombre: '', producto_id: '', cantidad: '1',
-    precio_unitario: '', estado: 'cobrada' as 'cobrada' | 'pendiente',
+    precio_unitario: '', metodo_pago: 'efectivo' as MetodoPago,
   })
+
+  // El estado se deriva del medio: si queda a cobrar, la venta nace pendiente.
+  // Antes eran dos preguntas separadas; en el mostrador es una sola: como paga.
+  const quedaACobrar = form.metodo_pago === 'cuotas'
+  const estadoDerivado: 'cobrada' | 'pendiente' = quedaACobrar ? 'pendiente' : 'cobrada'
 
   // Las anuladas no suman en ningun total: la operacion se deshizo.
   const vigentes = ventas.filter(v => v.estado !== 'cancelada')
@@ -147,7 +172,8 @@ export default function VentasPage() {
       await crearVenta({
         cliente_nombre: form.cliente_nombre,
         fecha: new Date().toISOString().split('T')[0],
-        estado: form.estado,
+        estado: estadoDerivado,
+        metodo_pago: quedaACobrar ? null : form.metodo_pago,
         subtotal: totalVenta,
         descuento: 0,
         total: totalVenta,
@@ -160,7 +186,7 @@ export default function VentasPage() {
         cantidad: +form.cantidad,
         precio_unitario: +form.precio_unitario,
       }])
-      setForm({ cliente_nombre: '', producto_id: '', cantidad: '1', precio_unitario: '', estado: 'cobrada' })
+      setForm({ cliente_nombre: '', producto_id: '', cantidad: '1', precio_unitario: '', metodo_pago: 'efectivo' })
       setModal(false)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Error')
@@ -424,7 +450,15 @@ export default function VentasPage() {
                     >
                       <td style={{ padding: '12px 14px', fontFamily: 'monospace', color: t.textMuted, fontSize: 12 }}>{v.nro_factura}</td>
                       <td style={{ padding: '12px 14px', color: t.textMuted }}>{v.fecha}</td>
-                      <td style={{ padding: '12px 14px', fontWeight: 600, color: t.text }}>{v.cliente_nombre}</td>
+                      <td style={{ padding: '12px 14px', fontWeight: 600, color: t.text }}>
+                        {v.cliente_nombre}
+                        {/* Guardar el medio y no mostrarlo seria guardarlo para nada. */}
+                        {v.metodo_pago && (
+                          <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: t.textMuted, marginTop: 2 }}>
+                            {METODO_LABEL[v.metodo_pago] ?? v.metodo_pago}
+                          </span>
+                        )}
+                      </td>
                       <td style={{ padding: '12px 14px', fontWeight: 700, color: COLORS.success }}>{fmt(v.total)}</td>
                       <td style={{ padding: '12px 14px' }}>
                         <span style={{
@@ -537,11 +571,34 @@ export default function VentasPage() {
                 </div>
               </div>
               <div>
-                <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Estado</p>
-                <select value={form.estado} onChange={e => setForm(p => ({...p, estado: e.target.value as 'cobrada' | 'pendiente'}))} style={inp}>
-                  <option value="cobrada">Cobrada</option>
-                  <option value="pendiente">Pendiente</option>
-                </select>
+                <p style={{ margin: '0 0 8px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>¿Cómo paga?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {METODOS_PAGO.map(m => {
+                    const activo = form.metodo_pago === m.id
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => setForm(p => ({ ...p, metodo_pago: m.id }))}
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                          background: activo ? COLORS.primary : 'transparent',
+                          color: activo ? '#fff' : t.textMuted,
+                          border: `1px solid ${activo ? COLORS.primary : t.border}`,
+                          borderRadius: 8, padding: '10px 6px', cursor: 'pointer',
+                          fontSize: 12, fontWeight: activo ? 700 : 500,
+                        }}
+                      >
+                        <span style={{ fontSize: 16 }}>{m.icon}</span>
+                        {m.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {quedaACobrar && (
+                  <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                    La venta queda <strong>pendiente de cobro</strong>.
+                  </p>
+                )}
               </div>
               {totalVenta > 0 && (
                 <div style={{

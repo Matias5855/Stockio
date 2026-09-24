@@ -19,6 +19,11 @@
 -- Requiere la función existente get_org_id() (ya está en el proyecto).
 -- ============================================================================
 
+-- 0. Metodo de pago de la venta ----------------------------------------------
+-- Como paga el cliente: efectivo, debito, credito, transferencia, mercadopago.
+-- Si la venta queda a cobrar en cuotas, va NULL y el plan vive en cuotas_ventas.
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS metodo_pago text;
+
 -- 1. Contador de nro de factura por organización (atómico, sin race) ----------
 CREATE TABLE IF NOT EXISTS venta_secuencia (
   org_id     uuid PRIMARY KEY,
@@ -113,7 +118,7 @@ BEGIN
   -- Insertar venta.
   v_id := COALESCE(p_venta_id, gen_random_uuid());
   INSERT INTO ventas (id, org_id, nro_factura, cliente_nombre, fecha, estado,
-                      subtotal, descuento, total, notas)
+                      subtotal, descuento, total, notas, metodo_pago)
   VALUES (
     v_id, v_org_id, v_nrof,
     p_venta->>'cliente_nombre',
@@ -122,7 +127,10 @@ BEGIN
     COALESCE((p_venta->>'subtotal')::numeric, 0),
     COALESCE((p_venta->>'descuento')::numeric, 0),
     COALESCE((p_venta->>'total')::numeric, 0),
-    p_venta->>'notas'
+    p_venta->>'notas',
+    -- p_venta es jsonb, asi que sumar un campo no cambia la firma de la RPC
+    -- ni rompe a quien la llame sin el (el sync offline, por ejemplo).
+    NULLIF(p_venta->>'metodo_pago', '')
   );
 
   -- Insertar items: el trigger `descontar_stock` descuenta el stock acá.
