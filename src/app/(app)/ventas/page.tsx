@@ -129,9 +129,14 @@ export default function VentasPage() {
     setTimeout(() => setMsg(null), 6000)
   }
 
+  // Cliente de Supabase para el plan de cuotas (la venta va por la RPC).
+  const supabase = useMemo(() => createClient(), [])
+
   const [form, setForm] = useState({
     cliente_nombre: '', producto_id: '', cantidad: '1',
     precio_unitario: '', metodo_pago: 'efectivo' as MetodoPago,
+    // Solo se usan cuando el medio es 'cuotas'
+    cantidad_cuotas: '3', interes_pct: '0', frecuencia: 'mensual',
   })
 
   // El estado se deriva del medio. Dos casos nacen PENDIENTES:
@@ -156,6 +161,15 @@ export default function VentasPage() {
 
   const productoSel = productos.find(p => p.id === form.producto_id)
   const totalVenta = +form.cantidad * +form.precio_unitario
+
+  // Misma formula que la pantalla de Cuotas, para que un plan creado desde
+  // aca y uno creado alla den exactamente lo mismo.
+  const totalConInteres = +form.interes_pct
+    ? totalVenta * (1 + +form.interes_pct / 100)
+    : totalVenta
+  const montoPorCuota = +form.cantidad_cuotas
+    ? totalConInteres / +form.cantidad_cuotas
+    : 0
 
   const handleBarcode = (code: string) => {
     setScanner(false)
@@ -201,7 +215,46 @@ export default function VentasPage() {
         cantidad: +form.cantidad,
         precio_unitario: +form.precio_unitario,
       }])
-      setForm({ cliente_nombre: '', producto_id: '', cantidad: '1', precio_unitario: '', metodo_pago: 'efectivo' })
+      // Plan de cuotas vinculado a ESTA venta.
+      //
+      // La pantalla de Cuotas crea su propia venta con numero CTA-<uuid>.
+      // Aca no: la venta ya existe, con su numero correlativo FC- y el stock
+      // descontado. Crear otra duplicaria la operacion y descuadraria el
+      // inventario, asi que el plan se engancha a la venta por venta_id.
+      if (quedaACobrar && creada?.id) {
+        const orgId = localStorage.getItem('stk_org_id')
+        const { error: errPlan } = await supabase.from('cuotas_ventas').insert({
+          org_id: orgId,
+          venta_id: creada.id,
+          cliente_nombre: form.cliente_nombre,
+          monto_total: totalConInteres,
+          monto_cuota: montoPorCuota,
+          cantidad_cuotas: +form.cantidad_cuotas,
+          interes_pct: +form.interes_pct,
+          frecuencia: form.frecuencia,
+          fecha_inicio: new Date().toISOString().split('T')[0],
+        })
+        // La venta ya quedo registrada: si falla el plan hay que decirlo, no
+        // dejar al usuario creyendo que armo un plan de pagos que no existe.
+        if (errPlan) {
+          setMsg({
+            text: `La venta se registró, pero no se pudo crear el plan de cuotas: ${errPlan.message}. Armalo desde Cuotas.`,
+            ok: false,
+          })
+          setTimeout(() => setMsg(null), 8000)
+        } else {
+          setMsg({
+            text: `Venta registrada · plan de ${form.cantidad_cuotas} cuotas de ${fmt(montoPorCuota)}`,
+            ok: true,
+          })
+          setTimeout(() => setMsg(null), 6000)
+        }
+      }
+
+      setForm({
+        cliente_nombre: '', producto_id: '', cantidad: '1', precio_unitario: '',
+        metodo_pago: 'efectivo', cantidad_cuotas: '3', interes_pct: '0', frecuencia: 'mensual',
+      })
       setModal(false)
       // Con Mercado Pago el flujo no termina al guardar: falta que el cliente
       // escanee y pague. Se abre el QR con la venta ya creada.
@@ -734,9 +787,47 @@ export default function VentasPage() {
                   })}
                 </div>
                 {quedaACobrar && (
-                  <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-                    La venta queda <strong>pendiente de cobro</strong>.
-                  </p>
+                  <div style={{
+                    marginTop: 12,
+                    background: isDark ? 'rgba(94,234,212,0.06)' : '#F0FDFA',
+                    border: `1px solid ${t.borderCard}`, borderRadius: 10, padding: 14,
+                  }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Plan de pago
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <div>
+                        <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Cuotas</p>
+                        <input type="number" min="2" value={form.cantidad_cuotas}
+                          onChange={e => setForm(p => ({ ...p, cantidad_cuotas: e.target.value }))} style={inp} />
+                      </div>
+                      <div>
+                        <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Interés %</p>
+                        <input type="number" min="0" value={form.interes_pct}
+                          onChange={e => setForm(p => ({ ...p, interes_pct: e.target.value }))} style={inp} />
+                      </div>
+                      <div>
+                        <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Frecuencia</p>
+                        <select value={form.frecuencia}
+                          onChange={e => setForm(p => ({ ...p, frecuencia: e.target.value }))} style={inp}>
+                          <option value="semanal">Semanal</option>
+                          <option value="quincenal">Quincenal</option>
+                          <option value="mensual">Mensual</option>
+                        </select>
+                      </div>
+                    </div>
+                    {totalVenta > 0 && +form.cantidad_cuotas > 0 && (
+                      <p style={{ margin: '12px 0 0', fontSize: 13, color: t.text, lineHeight: 1.5 }}>
+                        <strong>{form.cantidad_cuotas} cuotas de {fmt(Math.round(montoPorCuota))}</strong>
+                        {totalConInteres !== totalVenta && (
+                          <span style={{ color: t.textMuted }}> · total {fmt(Math.round(totalConInteres))} con interés</span>
+                        )}
+                      </p>
+                    )}
+                    <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                      La venta queda <strong>pendiente</strong> y el plan aparece en Cuotas para ir cobrándolo.
+                    </p>
+                  </div>
                 )}
                 {cobraPorMP && (
                   <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
