@@ -57,7 +57,7 @@ type VentaRow = {
 
 export default function VentasPage() {
   const { ventas, loading, crearVenta, cambiarEstado, anularVenta } = useVentas()
-  const { productos } = useStock()
+  const { productos, refetch: refetchStock } = useStock()
   // Tres permisos distintos a proposito. Eliminar va separado de crear porque
   // es el control clasico contra el faltante: quien registra la venta en el
   // mostrador no deberia poder borrarla despues (el preset 'vendedor' tiene
@@ -215,6 +215,11 @@ export default function VentasPage() {
         cantidad: +form.cantidad,
         precio_unitario: +form.precio_unitario,
       }])
+      // La venta acaba de descontar stock. Se refresca la lista en vez de
+      // confiar en que Realtime avise: el desplegable mostraba el valor
+      // anterior y se podia vender contra un stock que ya no existia.
+      refetchStock()
+
       // Plan de cuotas vinculado a ESTA venta.
       //
       // La pantalla de Cuotas crea su propia venta con numero CTA-<uuid>.
@@ -723,6 +728,10 @@ export default function VentasPage() {
           <div style={{
             background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
             padding: 28, width: 500, maxWidth: '100%',
+            // Con el bloque de cuotas abierto el modal pasa el alto de pantalla
+            // y antes no habia forma de llegar a los botones: sin scroll propio
+            // y sin scroll de pagina, porque el fondo es position:fixed.
+            maxHeight: '90vh', overflowY: 'auto',
             boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
           }}>
             <p style={{ margin: '0 0 20px', fontSize: 19, fontWeight: 800, color: t.text, letterSpacing: '-0.01em' }}>
@@ -842,9 +851,19 @@ export default function VentasPage() {
                   border: `1px solid ${COLORS.metric.ventas.border}`,
                   borderRadius: 10, padding: '12px 16px',
                 }}>
-                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: COLORS.metric.ventas.value }}>
-                    Total: {fmt(totalVenta)}
+                  {/* El numero grande es el que mira el vendedor para cobrar,
+                      asi que tiene que ser el total REAL: con interes si la
+                      venta va en cuotas. Antes mostraba siempre el sin
+                      interes y no cambiaba al armar el plan. */}
+                  <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLORS.metric.ventas.value }}>
+                    Total: {fmt(Math.round(quedaACobrar ? totalConInteres : totalVenta))}
                   </p>
+                  {quedaACobrar && totalConInteres !== totalVenta && (
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: COLORS.metric.ventas.value, opacity: 0.85 }}>
+                      {fmt(totalVenta)} + {form.interes_pct}% de interés
+                      · {form.cantidad_cuotas} cuotas de {fmt(Math.round(montoPorCuota))}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

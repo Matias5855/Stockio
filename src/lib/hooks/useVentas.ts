@@ -40,8 +40,16 @@ export function useVentas() {
   } = useTableSync<Venta>({
     table: 'ventas',
     select: '*, venta_items(*)',
-    order: { column: 'fecha', ascending: false },
-    localSort: (a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''),
+    // `fecha` es DATE: sin hora, todo lo del mismo dia empata y queda en
+    // orden arbitrario. created_at desempata para que lo ultimo hecho
+    // aparezca primero — incluida una anulacion sobre una venta de hoy.
+    order: [
+      { column: 'fecha', ascending: false },
+      { column: 'created_at', ascending: false },
+    ],
+    localSort: (a, b) =>
+      (b.fecha ?? '').localeCompare(a.fecha ?? '') ||
+      (b.created_at ?? '').localeCompare(a.created_at ?? ''),
   })
 
   const supabase = createClient()

@@ -33,8 +33,13 @@ export type UseTableSyncOptions<T> = {
   table: TableName
   /** Filtros adicionales aplicados al select (ej: { activo: true }) */
   filter?: Record<string, unknown>
-  /** Campo y direccion para order (ej: { column: 'fecha', ascending: false }) */
-  order?: { column: string; ascending: boolean }
+  /**
+   * Campo(s) y direccion para order. Acepta uno solo o una lista para
+   * desempatar: ordenar por `fecha` (que es DATE, sin hora) deja todo lo del
+   * mismo dia en orden arbitrario, asi que hace falta un segundo criterio
+   * como created_at para que lo ultimo hecho quede arriba.
+   */
+  order?: { column: string; ascending: boolean } | Array<{ column: string; ascending: boolean }>
   /** String de select (ej: '*, venta_items(*)'). Default: '*' */
   select?: string
   /** Filtro local sobre data offline (ej: descartar activo=false) */
@@ -112,7 +117,11 @@ export function useTableSync<T extends { id: string }>(opts: UseTableSyncOptions
           q = q.eq(k, v as never)
         }
       }
-      if (order) q = q.order(order.column, { ascending: order.ascending })
+      if (order) {
+        for (const o of Array.isArray(order) ? order : [order]) {
+          q = q.order(o.column, { ascending: o.ascending })
+        }
+      }
 
       const { data: rows, error } = await q
       if (error) throw error
