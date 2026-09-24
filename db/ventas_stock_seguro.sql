@@ -32,11 +32,17 @@ CREATE TABLE IF NOT EXISTS venta_secuencia (
 
 -- Sembrar el contador con el máximo nro ya usado por cada org (idempotente:
 -- DO NOTHING evita pisar contadores ya existentes en re-corridas).
+--
+-- OJO con el filtro `LIKE 'FC-%'`: sin el, el regexp saca los digitos de TODOS
+-- los numeros de factura, incluidos los CTA-<uuid> que genera el modulo de
+-- Cuotas. Eso sembraba el contador con un numero derivado de un UUID en vez
+-- del maximo real de las facturas, y dejaba la numeracion desalineada.
 INSERT INTO venta_secuencia (org_id, ultimo_nro)
 SELECT org_id,
-       COALESCE(MAX(NULLIF(regexp_replace(nro_factura, '\D', '', 'g'), ''))::int, 0)
+       COALESCE(MAX(NULLIF(regexp_replace(nro_factura, '\D', '', 'g'), ''))::bigint, 0)
 FROM ventas
 WHERE org_id IS NOT NULL
+  AND nro_factura LIKE 'FC-%'
 GROUP BY org_id
 ON CONFLICT (org_id) DO NOTHING;
 
@@ -113,7 +119,11 @@ BEGIN
   INSERT INTO venta_secuencia (org_id, ultimo_nro) VALUES (v_org_id, 1)
   ON CONFLICT (org_id) DO UPDATE SET ultimo_nro = venta_secuencia.ultimo_nro + 1
   RETURNING ultimo_nro INTO v_nro;
-  v_nrof := 'FC-' || LPAD(v_nro::text, 4, '0');
+  -- OJO: LPAD no solo rellena, TRUNCA si el texto es mas largo que el ancho.
+  -- Con LPAD(v_nro::text, 4, '0') y el contador en 30048421, el numero salia
+  -- 'FC-3004' — los primeros 4 caracteres. Todo el rango 3004xxxx colapsaba al
+  -- mismo numero de factura. GREATEST asegura que nunca se recorte.
+  v_nrof := 'FC-' || LPAD(v_nro::text, GREATEST(4, length(v_nro::text)), '0');
 
   -- Insertar venta.
   v_id := COALESCE(p_venta_id, gen_random_uuid());
