@@ -81,6 +81,35 @@ export async function POST(req: NextRequest) {
           .eq('org_id', orgId)
       }
 
+      // ── COBRO DE UNA VENTA DEL MOSTRADOR (QR de Mercado Pago) ──
+      // Se discrimina por metadata.tipo y NO por external_reference: ese
+      // campo ya lo usa el bloque de arriba como org_id de un pago de
+      // suscripcion, asi que meter una venta ahi la trataria como suscripcion.
+      if (payment.metadata?.tipo === 'venta_mostrador') {
+        const ventaId = payment.metadata?.venta_id
+
+        if (payment.status === 'approved' && ventaId) {
+          // Solo se toca si sigue pendiente: si alguien ya la marco cobrada a
+          // mano, no hay nada que hacer. Tambien evita revivir una anulada.
+          const { data: actualizada, error: ventaErr } = await supabase
+            .from('ventas')
+            .update({ estado: 'cobrada', metodo_pago: 'mercadopago' })
+            .eq('id', ventaId)
+            .eq('estado', 'pendiente')
+            .select('id, nro_factura')
+
+          if (ventaErr) {
+            console.error('[Webhook MP] No se pudo marcar la venta cobrada:', ventaErr.message)
+          } else if (actualizada && actualizada.length > 0) {
+            console.log('[Webhook MP] Venta cobrada por QR:', actualizada[0].nro_factura)
+          }
+
+          // El movimiento de caja NO se crea aca: crear_venta_segura() ya lo
+          // inserto al registrar la venta, este cobrada o pendiente. Insertar
+          // otro contaria la plata dos veces.
+        }
+      }
+
       // ── PAGO DE CUOTA DIGITAL (link MP) ────────────────────
       if (payment.metadata?.tipo === 'cuota_cliente') {
         const cuotaId = payment.metadata?.cuota_pago_id

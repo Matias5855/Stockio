@@ -73,6 +73,11 @@ export default function VentasPage() {
   const [emailInput, setEmailInput] = useState('')
   const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null)
   const [guardando, setGuardando]   = useState(false)
+  // Cobro por QR de Mercado Pago. El estado de la venta NO se guarda aca: se
+  // lee de `ventas`, que se actualiza sola por Realtime cuando el webhook la
+  // marca cobrada. Asi el modal refleja la verdad sin hacer polling.
+  const [qrCobro, setQrCobro] = useState<{ id: string; nro: string; total: number; link: string } | null>(null)
+  const [generandoQR, setGenerandoQR] = useState(false)
   const barcodeRef = useRef<HTMLInputElement>(null)
   // Guarda de reentrada por REF, no por estado: setGuardando(true) no surte
   // efecto hasta el proximo render, asi que dos clics en el mismo tick se
@@ -129,16 +134,26 @@ export default function VentasPage() {
     precio_unitario: '', metodo_pago: 'efectivo' as MetodoPago,
   })
 
-  // El estado se deriva del medio: si queda a cobrar, la venta nace pendiente.
-  // Antes eran dos preguntas separadas; en el mostrador es una sola: como paga.
+  // El estado se deriva del medio. Dos casos nacen PENDIENTES:
+  //  - 'cuotas'      -> la venta no se cobra ahora
+  //  - 'mercadopago' -> se cobra cuando MP confirme; si naciera cobrada no
+  //                     habria nada que confirmar y el QR seria decorativo
   const quedaACobrar = form.metodo_pago === 'cuotas'
-  const estadoDerivado: 'cobrada' | 'pendiente' = quedaACobrar ? 'pendiente' : 'cobrada'
+  const cobraPorMP = form.metodo_pago === 'mercadopago'
+  const estadoDerivado: 'cobrada' | 'pendiente' =
+    quedaACobrar || cobraPorMP ? 'pendiente' : 'cobrada'
 
   // Las anuladas no suman en ningun total: la operacion se deshizo.
   const vigentes = ventas.filter(v => v.estado !== 'cancelada')
   const total = vigentes.reduce((a, v) => a + v.total, 0)
   const cobradas = vigentes.filter(v => v.estado === 'cobrada').reduce((a, v) => a + v.total, 0)
   const pendienteMonto = vigentes.filter(v => v.estado === 'pendiente').reduce((a, v) => a + v.total, 0)
+  // La verdad sobre si ya pagaron sale de `ventas`, no de un estado local:
+  // cuando el webhook marca la venta cobrada, Realtime refresca la lista y
+  // este valor cambia solo. Sin polling.
+  const ventaDelQR = qrCobro ? ventas.find(v => v.id === qrCobro.id) : undefined
+  const qrPagado = ventaDelQR?.estado === 'cobrada'
+
   const productoSel = productos.find(p => p.id === form.producto_id)
   const totalVenta = +form.cantidad * +form.precio_unitario
 
@@ -169,7 +184,7 @@ export default function VentasPage() {
     guardandoRef.current = true
     setGuardando(true)
     try {
-      await crearVenta({
+      const creada = await crearVenta({
         cliente_nombre: form.cliente_nombre,
         fecha: new Date().toISOString().split('T')[0],
         estado: estadoDerivado,
@@ -188,12 +203,55 @@ export default function VentasPage() {
       }])
       setForm({ cliente_nombre: '', producto_id: '', cantidad: '1', precio_unitario: '', metodo_pago: 'efectivo' })
       setModal(false)
+      // Con Mercado Pago el flujo no termina al guardar: falta que el cliente
+      // escanee y pague. Se abre el QR con la venta ya creada.
+      if (cobraPorMP && creada?.id) {
+        await abrirCobroQR({ id: creada.id, nro_factura: creada.nro_factura, total: creada.total })
+      }
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Error')
     } finally {
       guardandoRef.current = false
       setGuardando(false)
     }
+  }
+
+  // Genera el link de pago de MP para una venta y abre el QR. Sirve tanto
+  // recien creada la venta como despues, desde la fila, si quedo pendiente.
+  const abrirCobroQR = async (v: { id: string; nro_factura: string; total: number }) => {
+    setGenerandoQR(true)
+    try {
+      const res = await fetch('/api/mp/cobro-venta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venta_id: v.id }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setMsg({ text: data?.error ?? 'No se pudo generar el cobro', ok: false })
+        setTimeout(() => setMsg(null), 6000)
+        return
+      }
+      setQrCobro({ id: v.id, nro: v.nro_factura, total: v.total, link: data.link })
+    } catch {
+      setMsg({ text: 'Error de conexión con Mercado Pago', ok: false })
+      setTimeout(() => setMsg(null), 6000)
+    } finally {
+      setGenerandoQR(false)
+    }
+  }
+
+  // Respaldo manual: si el webhook tarda o el cliente pago por otra via, el
+  // vendedor no puede quedar esperando a una confirmacion que no llega.
+  const marcarCobradaAMano = async (id: string) => {
+    try {
+      await cambiarEstado(id, 'cobrada')
+      setMsg({ text: 'Venta marcada como cobrada', ok: true })
+      setQrCobro(null)
+    } catch (e: unknown) {
+      setMsg({ text: e instanceof Error ? e.message : 'No se pudo marcar cobrada', ok: false })
+    }
+    setTimeout(() => setMsg(null), 5000)
   }
 
   // Anular en vez de borrar: la venta queda registrada como anulada, el stock
@@ -507,6 +565,11 @@ export default function VentasPage() {
                           <button onClick={() => { setEmailModal(v.id); setEmailInput('') }} title="Enviar por email"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.secondary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >✉</button>
+                          {puedeEditar && v.estado === 'pendiente' && (
+                          <button onClick={() => abrirCobroQR(v)} disabled={generandoQR} title="Cobrar con QR de Mercado Pago"
+                            style={{ background: 'none', border: 'none', cursor: generandoQR ? 'wait' : 'pointer', color: COLORS.primary, fontSize: 14, padding: 6, borderRadius: 6 }}
+                          >📱</button>
+                          )}
                           {puedeEliminar && v.estado !== 'cancelada' && (
                           <button onClick={() => anular(v)} title="Anular venta"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 16, padding: 6, borderRadius: 6, lineHeight: 1 }}
@@ -524,6 +587,82 @@ export default function VentasPage() {
           </div>
         )}
       </div>
+
+      {/* Cobro por QR de Mercado Pago */}
+      {qrCobro && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(4,47,46,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{
+            background: t.card, border: `1px solid ${t.borderCard}`, borderRadius: 16,
+            padding: 28, width: 380, maxWidth: '100%', textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(4,47,46,0.25)',
+          }}>
+            <p style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: t.text }}>
+              Cobrar venta {qrCobro.nro}
+            </p>
+            <p style={{ margin: '0 0 18px', fontSize: 20, fontWeight: 800, color: COLORS.success }}>
+              {fmt(qrCobro.total)}
+            </p>
+
+            {qrPagado ? (
+              <div style={{
+                background: COLORS.badge.ok.bg, border: '1px solid #86EFAC',
+                borderRadius: 12, padding: '28px 16px', marginBottom: 18,
+              }}>
+                <p style={{ fontSize: 40, margin: '0 0 8px' }}>✅</p>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: COLORS.badge.ok.text }}>
+                  ¡Pago confirmado!
+                </p>
+                <p style={{ margin: '6px 0 0', fontSize: 12, color: COLORS.badge.ok.text }}>
+                  Mercado Pago acreditó el cobro y la venta quedó cobrada.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  alt={`QR para pagar la venta ${qrCobro.nro}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrCobro.link)}&margin=16`}
+                  style={{ width: 220, height: 220, borderRadius: 12, background: '#fff' }}
+                />
+                <p style={{ margin: '14px 0 0', fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>
+                  Que el cliente escanee el código con Mercado Pago.
+                  <br />
+                  Cuando pague, esta pantalla se actualiza sola.
+                </p>
+              </>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18 }}>
+              {!qrPagado && (
+                <>
+                  <button onClick={() => navigator.clipboard.writeText(qrCobro.link).then(() => setMsg({ text: 'Link copiado', ok: true }))} style={{
+                    background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 8,
+                    padding: '10px', cursor: 'pointer', color: t.textMuted, fontSize: 13, fontWeight: 600,
+                  }}>
+                    Copiar link de pago
+                  </button>
+                  {/* Respaldo manual: si el webhook tarda o el cliente pago por
+                      otra via, el vendedor no queda esperando algo que no llega. */}
+                  <button onClick={() => marcarCobradaAMano(qrCobro.id)} style={{
+                    background: 'transparent', border: `1px solid ${COLORS.primary}`, borderRadius: 8,
+                    padding: '10px', cursor: 'pointer', color: COLORS.primary, fontSize: 13, fontWeight: 700,
+                  }}>
+                    Ya me pagó — marcar cobrada
+                  </button>
+                </>
+              )}
+              <button onClick={() => setQrCobro(null)} style={{
+                background: qrPagado ? COLORS.primary : 'none',
+                color: qrPagado ? '#fff' : t.textMuted,
+                border: qrPagado ? 'none' : `1px solid ${t.border}`,
+                borderRadius: 8, padding: '10px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              }}>
+                {qrPagado ? 'Listo' : 'Cerrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal nueva venta */}
       {modal && (
@@ -597,6 +736,12 @@ export default function VentasPage() {
                 {quedaACobrar && (
                   <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
                     La venta queda <strong>pendiente de cobro</strong>.
+                  </p>
+                )}
+                {cobraPorMP && (
+                  <p style={{ margin: '8px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                    Al guardar se muestra el <strong>QR</strong> para que el cliente escanee.
+                    La venta se marca cobrada cuando Mercado Pago confirme.
                   </p>
                 )}
               </div>

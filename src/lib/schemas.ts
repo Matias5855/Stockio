@@ -100,6 +100,13 @@ export const QrRapidoInputSchema = z.object({
 })
 export type QrRapidoInput = z.infer<typeof QrRapidoInputSchema>
 
+// Cobro de una venta puntual. Solo viaja el id: el monto lo define la venta
+// registrada del lado del servidor, no lo que mande el navegador.
+export const CobroVentaInputSchema = z.object({
+  venta_id: z.string().uuid(),
+})
+export type CobroVentaInput = z.infer<typeof CobroVentaInputSchema>
+
 export const SuscripcionInputSchema = z.object({
   plan_id: z.enum(['normal', 'premium']),
   // payer_email opcional: si no viene lo tomamos del user logueado
