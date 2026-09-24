@@ -52,7 +52,12 @@ export default function VentasPage() {
   const [emailModal, setEmailModal] = useState<string | null>(null)
   const [emailInput, setEmailInput] = useState('')
   const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null)
+  const [guardando, setGuardando]   = useState(false)
   const barcodeRef = useRef<HTMLInputElement>(null)
+  // Guarda de reentrada por REF, no por estado: setGuardando(true) no surte
+  // efecto hasta el proximo render, asi que dos clics en el mismo tick se
+  // colaban igual. Con el ref el segundo se corta en seco.
+  const guardandoRef = useRef(false)
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
@@ -128,8 +133,14 @@ export default function VentasPage() {
     }
   }
 
+  // Sin esta guarda, dos clics seguidos creaban DOS ventas: save() es async,
+  // el boton no se deshabilitaba y cada clic disparaba su propia llamada a
+  // crear_venta_segura. Paso en produccion (dos filas a 98 ms de distancia).
   const save = async () => {
     if (!form.cliente_nombre || !form.producto_id) return
+    if (guardandoRef.current) return
+    guardandoRef.current = true
+    setGuardando(true)
     try {
       await crearVenta({
         cliente_nombre: form.cliente_nombre,
@@ -151,6 +162,9 @@ export default function VentasPage() {
       setModal(false)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Error')
+    } finally {
+      guardandoRef.current = false
+      setGuardando(false)
     }
   }
 
@@ -529,11 +543,12 @@ export default function VentasPage() {
                 background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,
                 padding: '10px 18px', cursor: 'pointer', color: t.textMuted, fontSize: 13, fontWeight: 600,
               }}>Cancelar</button>
-              <button onClick={save} style={{
+              <button onClick={save} disabled={guardando} style={{
                 background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
-                padding: '10px 22px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                padding: '10px 22px', cursor: guardando ? 'wait' : 'pointer',
+                fontWeight: 700, fontSize: 13, opacity: guardando ? 0.7 : 1,
                 boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-              }}>Guardar venta</button>
+              }}>{guardando ? 'Guardando…' : 'Guardar venta'}</button>
             </div>
           </div>
         </div>
