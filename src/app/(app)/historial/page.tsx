@@ -29,6 +29,7 @@ const ACCION_LABEL: Record<AccionHistorial, string> = {
   crear: 'Creó',
   editar: 'Editó',
   eliminar: 'Eliminó',
+  anular: 'Anuló',
   cobrar: 'Cobró',
   cambiar_estado: 'Cambió estado de',
   login: 'Inició sesión en',
@@ -38,6 +39,7 @@ const ACCION_COLOR: Record<AccionHistorial, { bg: string; text: string }> = {
   crear:          COLORS.badge.ok,
   editar:         { bg: '#DBEAFE', text: '#1E40AF' },
   eliminar:       COLORS.badge.error,
+  anular:         COLORS.badge.error,
   cobrar:         COLORS.badge.ok,
   cambiar_estado: COLORS.badge.bajo,
   login:          { bg: '#F3F4F6', text: '#6B7280' },
@@ -152,6 +154,7 @@ export default function HistorialPage() {
             <option value="crear">Crear</option>
             <option value="editar">Editar</option>
             <option value="eliminar">Eliminar</option>
+            <option value="anular">Anular</option>
             <option value="cobrar">Cobrar</option>
             <option value="cambiar_estado">Cambiar estado</option>
           </select>

@@ -18,6 +18,7 @@ export type AccionHistorial =
   | 'crear'
   | 'editar'
   | 'eliminar'
+  | 'anular'
   | 'cobrar'
   | 'cambiar_estado'
   | 'login'

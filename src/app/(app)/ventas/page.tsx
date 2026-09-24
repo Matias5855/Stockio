@@ -36,7 +36,7 @@ type VentaRow = {
 }
 
 export default function VentasPage() {
-  const { ventas, loading, crearVenta, cambiarEstado, deleteVenta } = useVentas()
+  const { ventas, loading, crearVenta, cambiarEstado, anularVenta } = useVentas()
   const { productos } = useStock()
   // Tres permisos distintos a proposito. Eliminar va separado de crear porque
   // es el control clasico contra el faltante: quien registra la venta en el
@@ -109,9 +109,11 @@ export default function VentasPage() {
     precio_unitario: '', estado: 'cobrada' as 'cobrada' | 'pendiente',
   })
 
-  const total = ventas.reduce((a, v) => a + v.total, 0)
-  const cobradas = ventas.filter(v => v.estado === 'cobrada').reduce((a, v) => a + v.total, 0)
-  const pendienteMonto = ventas.filter(v => v.estado === 'pendiente').reduce((a, v) => a + v.total, 0)
+  // Las anuladas no suman en ningun total: la operacion se deshizo.
+  const vigentes = ventas.filter(v => v.estado !== 'cancelada')
+  const total = vigentes.reduce((a, v) => a + v.total, 0)
+  const cobradas = vigentes.filter(v => v.estado === 'cobrada').reduce((a, v) => a + v.total, 0)
+  const pendienteMonto = vigentes.filter(v => v.estado === 'pendiente').reduce((a, v) => a + v.total, 0)
   const productoSel = productos.find(p => p.id === form.producto_id)
   const totalVenta = +form.cantidad * +form.precio_unitario
 
@@ -168,16 +170,29 @@ export default function VentasPage() {
     }
   }
 
-  // deleteVenta() lanza si la base rechaza, y acá nadie lo agarraba: el botón
-  // simplemente no hacía nada y no había forma de saber por qué. Quinto caso
-  // del mismo patrón en este proyecto (sync offline, nombre del negocio, cobro
-  // de cuotas, invitar).
-  const borrarVenta = async (id: string) => {
+  // Anular en vez de borrar: la venta queda registrada como anulada, el stock
+  // vuelve al inventario y la plata sale de la caja. Borrarla dejaria un hueco
+  // en la numeracion correlativa que ARCA exige.
+  const anular = async (v: VentaRow) => {
+    const ok = confirm(
+      `¿Anular la venta ${v.nro_factura}?
+
+` +
+      `· El stock vuelve al inventario
+` +
+      `· Se descuenta $${v.total.toLocaleString('es-AR')} de la caja
+` +
+      `· La venta queda registrada como anulada, no se borra`
+    )
+    if (!ok) return
     try {
-      await deleteVenta(id)
-      setMsg({ text: 'Venta eliminada', ok: true })
+      const res = await anularVenta(v.id)
+      setMsg({
+        text: res?.ya_estaba ? 'Esa venta ya estaba anulada' : `Venta ${v.nro_factura} anulada`,
+        ok: true,
+      })
     } catch (e: unknown) {
-      setMsg({ text: `No se pudo eliminar: ${e instanceof Error ? e.message : 'error desconocido'}`, ok: false })
+      setMsg({ text: e instanceof Error ? e.message : 'No se pudo anular', ok: false })
     }
     setTimeout(() => setMsg(null), 6000)
   }
@@ -413,17 +428,19 @@ export default function VentasPage() {
                       <td style={{ padding: '12px 14px', fontWeight: 700, color: COLORS.success }}>{fmt(v.total)}</td>
                       <td style={{ padding: '12px 14px' }}>
                         <span style={{
-                          background: v.estado === 'cobrada' ? COLORS.badge.cobrada.bg : COLORS.badge.pendiente.bg,
-                          color: v.estado === 'cobrada' ? COLORS.badge.cobrada.text : COLORS.badge.pendiente.text,
+                          background: v.estado === 'cancelada' ? COLORS.badge.error.bg
+                            : v.estado === 'cobrada' ? COLORS.badge.cobrada.bg : COLORS.badge.pendiente.bg,
+                          color: v.estado === 'cancelada' ? COLORS.badge.error.text
+                            : v.estado === 'cobrada' ? COLORS.badge.cobrada.text : COLORS.badge.pendiente.text,
                           padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
                           display: 'inline-block',
                         }}>
-                          {v.estado === 'cobrada' ? 'Cobrada' : 'Pendiente'}
+                          {v.estado === 'cancelada' ? 'Anulada' : v.estado === 'cobrada' ? 'Cobrada' : 'Pendiente'}
                         </span>
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          {puedeEditar && (
+                          {puedeEditar && v.estado !== 'cancelada' && (
                           <button onClick={() => cambiarEstado(v.id, v.estado === 'cobrada' ? 'pendiente' : 'cobrada')}
                             title="Cambiar estado"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 14, padding: 6, borderRadius: 6 }}
@@ -456,12 +473,12 @@ export default function VentasPage() {
                           <button onClick={() => { setEmailModal(v.id); setEmailInput('') }} title="Enviar por email"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.secondary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >✉</button>
-                          {puedeEliminar && (
-                          <button onClick={() => { if (confirm('¿Eliminar esta venta?')) borrarVenta(v.id) }} title="Eliminar"
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 18, padding: 6, borderRadius: 6, lineHeight: 1 }}
+                          {puedeEliminar && v.estado !== 'cancelada' && (
+                          <button onClick={() => anular(v)} title="Anular venta"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 16, padding: 6, borderRadius: 6, lineHeight: 1 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.danger; e.currentTarget.style.background = '#FFF1F2' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
-                          >×</button>
+                          >⊘</button>
                           )}
                         </div>
                       </td>

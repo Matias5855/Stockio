@@ -161,6 +161,43 @@ export function useVentas() {
     }
   }
 
+  /**
+   * Anular reemplaza a borrar. La venta no desaparece: pasa a 'cancelada', el
+   * stock vuelve al inventario y la plata sale de la caja con un movimiento
+   * contrario. Todo en una transaccion del lado de la base (anular_venta).
+   *
+   * Borrar una factura dejaria un hueco en la numeracion correlativa que ARCA
+   * exige, y haria desaparecer el rastro de que la operacion existio.
+   */
+  const anularVenta = async (id: string) => {
+    if (!navigator.onLine) {
+      throw new Error('Necesitás conexión para anular una venta.')
+    }
+    const { data, error } = await supabase.rpc('anular_venta', { p_venta_id: id })
+    if (error) {
+      const msg = error.message || 'No se pudo anular la venta'
+      if (msg.includes('TIENE_PLAN_CUOTAS')) {
+        throw new Error('Esta venta tiene un plan de cuotas. Anulá el plan desde Cuotas.')
+      }
+      if (msg.includes('SIN_PERMISO')) {
+        throw new Error('No tenés permiso para anular ventas.')
+      }
+      throw new Error(msg)
+    }
+
+    const res = (data ?? {}) as { nro_factura?: string; ya_estaba?: boolean }
+    setVentas(prev => prev.map(x => x.id === id ? { ...x, estado: 'cancelada' } : x))
+
+    if (!res.ya_estaba) {
+      const v = ventas.find(x => x.id === id)
+      logHistorial({
+        accion: 'anular', entidad: 'venta', entidad_id: id,
+        descripcion: `Venta ${res.nro_factura ?? ''} anulada${v ? ` (${v.cliente_nombre ?? 'Consumidor Final'}, $${v.total.toLocaleString('es-AR')})` : ''}`,
+      })
+    }
+    return res
+  }
+
   const deleteVenta = async (id: string) => {
     const v = ventas.find(x => x.id === id)
     if (navigator.onLine) {
@@ -178,5 +215,5 @@ export function useVentas() {
     }
   }
 
-  return { ventas, loading, orgId, crearVenta, cambiarEstado, deleteVenta, refetch: fetchVentas }
+  return { ventas, loading, orgId, crearVenta, cambiarEstado, anularVenta, deleteVenta, refetch: fetchVentas }
 }
