@@ -138,6 +138,9 @@ function AppLayoutInner() {
   const [page, setPage] = useState('dashboard')
   const [isDark, setIsDark] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  // En mobile la sidebar no se colapsa: se convierte en un cajon que entra
+  // desde la izquierda. `collapsed` sigue siendo solo de escritorio.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
   // Sesion revocada desde otro dispositivo: los cambios locales no pueden subir
   // hasta volver a iniciar sesion.
@@ -442,16 +445,52 @@ function AppLayoutInner() {
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
+          {/* Breakpoint del proyecto: 768px, el mismo que la landing y el login.
+              Bajo ese ancho la sidebar sale del flujo y pasa a ser un cajon
+              superpuesto: ocupando 224px fijos dejaba 151px de contenido en un
+              telefono de 375px, y toda la app quedaba inusable en el mostrador. */}
+          <style>{`
+            @media (max-width: 768px) {
+              .app-sidebar {
+                position: fixed !important;
+                top: 0; bottom: 0; left: 0;
+                width: 250px !important;
+                z-index: 200;
+                transform: translateX(-100%);
+                transition: transform 0.22s ease !important;
+              }
+              .app-sidebar-abierta { transform: translateX(0); }
+              .app-sidebar-backdrop { display: block !important; }
+              .app-nav-toggle { display: flex !important; }
+              .app-header { padding: 12px 14px !important; }
+              .app-main { padding: 16px 14px !important; }
+            }
+          `}</style>
+
+          {/* Fondo oscuro del cajon: tocar afuera lo cierra. */}
+          {mobileNavOpen && (
+            <div
+              className="app-sidebar-backdrop"
+              onClick={() => setMobileNavOpen(false)}
+              style={{
+                display: 'none', position: 'fixed', inset: 0,
+                background: 'rgba(4,47,46,0.5)', zIndex: 199,
+              }}
+            />
+          )}
+
           {/* SIDEBAR */}
-          <aside style={{
-            width: collapsed ? 64 : 224,
-            background: t.sidebar,
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.2s ease',
-            flexShrink: 0,
-            overflow: 'hidden',
-          }}>
+          <aside
+            className={`app-sidebar${mobileNavOpen ? ' app-sidebar-abierta' : ''}`}
+            style={{
+              width: collapsed ? 64 : 224,
+              background: t.sidebar,
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'width 0.2s ease',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}>
 
             <div style={{
               padding: collapsed ? '20px 10px' : '20px',
@@ -471,11 +510,13 @@ function AppLayoutInner() {
                   </div>
                 </div>
               )}
-              <button onClick={toggleCollapsed} style={{
+              {/* En escritorio colapsa la sidebar; en mobile cierra el cajon,
+                  que es lo unico que tiene sentido ahi. */}
+              <button onClick={() => { if (mobileNavOpen) setMobileNavOpen(false); else toggleCollapsed() }} style={{
                 background: 'none', border: 'none', cursor: 'pointer', color: t.textOnSidebar,
                 padding: 4, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0,
                 fontSize: 18,
-              }}>☰</button>
+              }}>{mobileNavOpen ? '✕' : '☰'}</button>
             </div>
 
             <nav style={{ flex: 1, padding: '10px 0' }}>
@@ -487,7 +528,7 @@ function AppLayoutInner() {
                 NAV
                   .filter(item => puedeVer(item, suscripcion?.plan_id, permisos, role))
                   .map(item => (
-                    <button key={item.id} onClick={() => setPage(item.id)} style={navBtnStyle(page === item.id)}>
+                    <button key={item.id} onClick={() => { setPage(item.id); setMobileNavOpen(false) }} style={navBtnStyle(page === item.id)}>
                       <span style={{ fontSize: 16 }}>{item.icon}</span>
                       {!collapsed && <span>{item.label}</span>}
                     </button>
@@ -525,7 +566,7 @@ function AppLayoutInner() {
 
           {/* HEADER + CONTENIDO */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <header style={{
+            <header className="app-header" style={{
               padding: '14px 28px',
               borderBottom: `1px solid ${t.border}`,
               display: 'flex',
@@ -535,13 +576,26 @@ function AppLayoutInner() {
               background: t.card,
               flexShrink: 0,
             }}>
+              {/* Oculta por defecto; la media query la muestra bajo 768px.
+                  Es la unica forma de abrir el cajon en mobile. */}
+              <button
+                className="app-nav-toggle"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menú"
+                aria-expanded={mobileNavOpen}
+                style={{
+                  display: 'none', alignItems: 'center', justifyContent: 'center',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: t.text, fontSize: 22, padding: 4, flexShrink: 0,
+                }}
+              >☰</button>
               <div style={{ flex: 1, maxWidth: 480 }}>
                 <BusquedaGlobal onNavegar={setPage} />
               </div>
               <Notificaciones />
             </header>
 
-            <main style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
+            <main className="app-main" style={{ flex: 1, overflow: 'auto', padding: 28, background: t.bg, color: t.text }}>
               {esperandoPermisos ? (
                 <PageLoader />
               ) : accesoDenegado ? (

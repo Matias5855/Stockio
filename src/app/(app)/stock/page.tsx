@@ -272,7 +272,11 @@ export default function StockPage() {
           </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            {/* minWidth es lo que hace funcionar el overflowX del padre.
+                Con width:100% y nada mas, la tabla se encoge hasta caber
+                siempre: en un telefono las columnas quedaban de pocos
+                pixeles, ilegibles, y nunca aparecia el scroll. */}
+            <table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
                   {['Producto', 'SKU', 'Talle', 'Color', 'Cantidad', 'Mín.', 'Precio', 'Costo', 'Margen', 'Estado', ''].map(h => (
