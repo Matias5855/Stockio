@@ -15,6 +15,7 @@ import { createClient } from '@supabase/supabase-js'
 import { parseBody, ValidationError } from '@/lib/schemas'
 import { rateLimit, getClientIp } from '@/lib/rateLimit'
 import { ROLES_PRESET, ROLES_INVITABLES } from '@/lib/auth/permisos'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,9 +107,16 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Marcar invitacion como aceptada
-    await supabase.from('invitaciones')
+    //
+    // Si esto falla, la invitacion sigue figurando como pendiente y su token
+    // sigue siendo valido: cualquiera que lo tenga puede volver a usarlo. No
+    // se corta el alta — el empleado ya quedo creado — pero hay que saberlo.
+    const { error: errAceptar } = await supabase.from('invitaciones')
       .update({ accepted: true, accepted_at: new Date().toISOString() })
       .eq('id', invitacion.id)
+    if (errAceptar) reportarFalla('aceptar-invitacion/marcar-usada', errAceptar, {
+      invitacionId: invitacion.id, orgId: invitacion.org_id,
+    })
 
     return NextResponse.json({
       ok: true,

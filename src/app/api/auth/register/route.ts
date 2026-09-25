@@ -7,6 +7,7 @@ import { rateLimit, getClientIp } from '@/lib/rateLimit'
 import { from as emailFrom, replyTo } from '@/lib/email'
 import WelcomeEmail from '@/emails/WelcomeEmail'
 import { PERMISOS_OWNER } from '@/lib/auth/permisos'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +50,16 @@ export async function POST(req: NextRequest) {
     if (orgErr) return NextResponse.json({ error: orgErr.message }, { status: 400 })
 
     // 3. Crear perfil
-    await supabaseAdmin.from('profiles').insert({
+    //
+    // Este error era FATAL y se tragaba. El profile es lo que conecta al
+    // usuario con su organizacion: get_org_id() lo lee de ahi. Sin el, la
+    // persona puede iniciar sesion pero la app no encuentra su negocio — ve
+    // todo vacio, para siempre, sin saber por que. Y como ya existe la cuenta
+    // de auth, tampoco puede volver a registrarse con ese email.
+    //
+    // Se revierte lo creado y se devuelve el error: una cuenta a medias es
+    // peor que un registro fallido, porque el registro se puede reintentar.
+    const { error: profileErr } = await supabaseAdmin.from('profiles').insert({
       id: userId,
       org_id: org.id,
       full_name: nombre,
@@ -60,14 +70,31 @@ export async function POST(req: NextRequest) {
       permisos: PERMISOS_OWNER,
     })
 
+    if (profileErr) {
+      reportarFalla('register/crear-perfil', profileErr, { userId, orgId: org.id })
+      await supabaseAdmin.from('organizations').delete().eq('id', org.id)
+      await supabaseAdmin.auth.admin.deleteUser(userId)
+      return NextResponse.json(
+        { error: 'No pudimos completar el registro. Intentá de nuevo en un momento.' },
+        { status: 500 },
+      )
+    }
+
     // 4. Crear suscripción trial
+    //
+    // No es fatal: si falla, la cuenta funciona igual. Pero sin fila de
+    // suscripcion el paywall no tiene que leer y el trial no arranca, asi que
+    // hay que enterarse. Puede fallar por duplicado si el trigger
+    // crear_suscripcion_trial() ya la creo al insertar la organizacion — algo
+    // que este insert silencioso venia tapando.
     const trialFin = new Date(Date.now() + 30 * 24 * 3600 * 1000)
-    await supabaseAdmin.from('suscripciones').insert({
+    const { error: suscErr } = await supabaseAdmin.from('suscripciones').insert({
       org_id: org.id,
       plan_id: plan,
       estado: 'trial',
       trial_fin: trialFin.toISOString(),
     })
+    if (suscErr) reportarFalla('register/crear-trial', suscErr, { orgId: org.id, plan })
 
     // 5. Email de bienvenida con Resend + React Email
     // React Email escapa automaticamente el contenido de strings interpolados,

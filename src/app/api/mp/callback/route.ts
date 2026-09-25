@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 // Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
 // legibles con el cliente del usuario: se les revoco el SELECT sobre esas
@@ -48,12 +49,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/configuracion?mp=error', req.url))
     }
 
-    await createAdminClient().from('organizations').update({
+    const { error: errToken } = await createAdminClient().from('organizations').update({
       mp_access_token: tokenData.access_token,
       mp_refresh_token: tokenData.refresh_token,
       mp_user_id: String(tokenData.user_id),
       mp_connected: true,
     }).eq('id', profile.org_id)
+
+    // Sin esto el usuario volvia a Configuracion con un "conectado" que era
+    // mentira: el token no se guardo y cualquier cobro posterior falla. El
+    // token NO va en el reporte, solo el org_id.
+    if (errToken) {
+      reportarFalla('mp-callback/guardar-token', errToken, { orgId: profile.org_id })
+      return NextResponse.redirect(new URL('/configuracion?mp=error', req.url))
+    }
 
     return NextResponse.redirect(new URL('/configuracion?mp=ok', req.url))
   } catch (err) {

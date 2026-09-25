@@ -11,6 +11,7 @@
 // falla, rechazamos con 401 — un atacante podria activar suscripciones gratis.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { reportarFalla } from '@/lib/reportarFalla'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { render } from '@react-email/components'
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
       if (payment.status === 'approved') {
         const orgId = payment.external_reference
 
-        await supabase.from('pagos').insert({
+        const { error: errPago } = await supabase.from('pagos').insert({
           org_id: orgId,
           mp_payment_id: String(payment.id),
           monto: payment.transaction_amount,
@@ -71,14 +72,22 @@ export async function POST(req: NextRequest) {
           concepto: payment.description,
           metadata: payment,
         })
+        // El cliente ya pago. Si no se registra, no queda constancia.
+        if (errPago) reportarFalla('webhook-mp/registrar-pago', errPago, {
+          orgId, mp_payment_id: String(payment.id), monto: payment.transaction_amount,
+        })
 
-        await supabase.from('suscripciones')
+        const { error: errSusc } = await supabase.from('suscripciones')
           .update({
             estado: 'activa',
             periodo_inicio: new Date().toISOString(),
             periodo_fin: new Date(Date.now() + 31 * 24 * 3600 * 1000).toISOString(),
           })
           .eq('org_id', orgId)
+        // La peor de todas: pago y no se le activa el acceso.
+        if (errSusc) reportarFalla('webhook-mp/activar-suscripcion', errSusc, {
+          orgId, mp_payment_id: String(payment.id),
+        })
       }
 
       // ── COBRO DE UNA VENTA DEL MOSTRADOR (QR de Mercado Pago) ──
@@ -99,7 +108,7 @@ export async function POST(req: NextRequest) {
             .select('id, nro_factura')
 
           if (ventaErr) {
-            console.error('[Webhook MP] No se pudo marcar la venta cobrada:', ventaErr.message)
+            reportarFalla('webhook-mp/venta-cobrada', ventaErr, { ventaId })
           } else if (actualizada && actualizada.length > 0) {
             console.log('[Webhook MP] Venta cobrada por QR:', actualizada[0].nro_factura)
           }
@@ -115,12 +124,16 @@ export async function POST(req: NextRequest) {
         const cuotaId = payment.metadata?.cuota_pago_id
 
         if (payment.status === 'approved' && cuotaId) {
-          await supabase.from('cuota_pagos').update({
+          const { error: errCuota } = await supabase.from('cuota_pagos').update({
             estado: 'pagada',
             fecha_pago: new Date().toISOString().split('T')[0],
             mp_payment_id: String(payment.id),
             metodo_pago: 'mp',
           }).eq('id', cuotaId)
+          // El cliente pago la cuota y le seguiria figurando impaga.
+          if (errCuota) reportarFalla('webhook-mp/cuota-pagada', errCuota, {
+            cuotaId, mp_payment_id: String(payment.id),
+          })
 
           const { data: cuotaPago } = await supabase
             .from('cuota_pagos').select('cuota_venta_id, monto').eq('id', cuotaId).single()
@@ -135,11 +148,16 @@ export async function POST(req: NextRequest) {
               const nuevasCuotasPagadas = cv.cuotas_pagadas + 1
               const completada = nuevasCuotasPagadas >= cv.cantidad_cuotas
 
-              await supabase.from('cuotas_ventas').update({
+              const { error: errPlan } = await supabase.from('cuotas_ventas').update({
                 monto_pagado: nuevoPagado,
                 cuotas_pagadas: nuevasCuotasPagadas,
                 estado: completada ? 'completada' : 'activa',
               }).eq('id', cuotaPago.cuota_venta_id)
+              // El pago quedo registrado pero el plan no avanza: el total
+              // pagado y la cantidad de cuotas quedan atrasados.
+              if (errPlan) reportarFalla('webhook-mp/avanzar-plan-cuotas', errPlan, {
+                cuota_venta_id: cuotaPago.cuota_venta_id, nuevasCuotasPagadas,
+              })
             }
           }
         }

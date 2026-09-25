@@ -15,6 +15,7 @@
  * configurado en el dashboard. Sin secret valido, devuelve 401.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { reportarFalla } from '@/lib/reportarFalla'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { render } from '@react-email/components'
@@ -115,9 +116,14 @@ async function procesarAvisos(opts: {
       })
 
       const updatePayload: Record<string, string> = { [columna]: new Date().toISOString() }
-      await supabase.from('suscripciones')
+      const { error: errMarca } = await supabase.from('suscripciones')
         .update(updatePayload)
         .eq('id', s.id)
+      // El mail ya salio. Si no queda marcado, mañana se vuelve a mandar: el
+      // cliente recibe el mismo aviso todos los dias hasta que termine el trial.
+      if (errMarca) reportarFalla('cron-trial/marcar-aviso', errMarca, {
+        suscripcionId: s.id, tipo, columna,
+      })
 
       enviados++
     } catch (err) {
@@ -163,9 +169,14 @@ async function procesarTrialesVencidos(opts: {
   for (const s of candidatos) {
     try {
       // Marcar vencida antes que nada — si el email falla, igual queda registrado.
-      await supabase.from('suscripciones')
+      const { error: errVencida } = await supabase.from('suscripciones')
         .update({ estado: 'vencida' })
         .eq('id', s.id)
+      // Si no se marca, el trial nunca vence y la cuenta sigue con acceso
+      // gratis indefinidamente. Es plata que no se cobra.
+      if (errVencida) reportarFalla('cron-trial/marcar-vencida', errVencida, {
+        suscripcionId: s.id, orgId: s.org_id,
+      })
 
       const { data: org } = await supabase
         .from('organizations').select('name').eq('id', s.org_id).single()
@@ -195,9 +206,13 @@ async function procesarTrialesVencidos(opts: {
         html,
       })
 
-      await supabase.from('suscripciones')
+      const { error: errAviso } = await supabase.from('suscripciones')
         .update({ aviso_vencido_enviado_at: new Date().toISOString() })
         .eq('id', s.id)
+      // Mismo problema que arriba: el aviso de vencimiento se repetiria.
+      if (errAviso) reportarFalla('cron-trial/marcar-aviso-vencido', errAviso, {
+        suscripcionId: s.id, orgId: s.org_id,
+      })
 
       enviados++
     } catch (err) {
