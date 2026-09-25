@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { useNav } from '../layout'
 import { PERMISOS_LABELS, ROLES_PRESET } from '@/lib/auth/permisos'
+import { useApp } from '@/lib/context/AppContext'
 
 type Empleado = {
   id: string
@@ -38,6 +39,15 @@ export default function EmpleadosPage() {
   const [permisos, setPermisos] = useState(ROLES_PRESET.vendedor)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [esPremium, setEsPremium] = useState(false)
+
+  // Dar de alta gente es exclusivo del dueño (decisión del 2026-09-25), y
+  // /api/empleados/invitar ya lo exige con requireRole(['owner']). Esto no
+  // agrega seguridad: alinea la pantalla con lo que el servidor ya hace, para
+  // no mostrarle a un admin un botón que le va a responder 403. `permisos.
+  // gestionar_usuarios` sigue sirviendo para lo otro que hace esta pantalla:
+  // ver el equipo y editar los permisos de los demás.
+  const { role, loading: rolCargando } = useApp()
+  const esDueno = !rolCargando && role === 'owner'
 
   const [isDark, setIsDark] = useState(false)
   useEffect(() => {
@@ -80,6 +90,10 @@ export default function EmpleadosPage() {
   // el cartel decia "enviada" aunque el mail nunca hubiera salido.
   const invitar = async () => {
     if (!form.email) return
+    if (!esDueno) {
+      setMsg({ text: 'Solo el dueño del negocio puede invitar empleados.', ok: false })
+      return
+    }
 
     const res = await fetch('/api/empleados/invitar', {
       method: 'POST',
@@ -170,12 +184,32 @@ export default function EmpleadosPage() {
             {empleados.length} empleado{empleados.length !== 1 ? 's' : ''} · {invitaciones.length} invitación{invitaciones.length !== 1 ? 'es' : ''} pendiente{invitaciones.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button onClick={() => setModal(true)} style={{
-          background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
-          padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
-          boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-        }}>+ Invitar empleado</button>
+        {esDueno && (
+          <button onClick={() => setModal(true)} style={{
+            background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+            padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+          }}>+ Invitar empleado</button>
+        )}
       </div>
+
+      {/* Sin esto, un admin con `gestionar_usuarios` entra a la pantalla, no
+          encuentra el botón y no tiene forma de saber por qué. */}
+      {!esDueno && !rolCargando && (
+        <div style={{
+          background: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC',
+          border: `1px solid ${t.border}`,
+          borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+          fontSize: 13, lineHeight: 1.5, color: t.textMuted,
+          display: 'flex', gap: 10, alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: 15, lineHeight: 1.3 }}>🔒</span>
+          <span>
+            Dar de alta una persona nueva lo hace <strong>solo el dueño del negocio</strong>.
+            Desde acá podés ver el equipo y ajustar los permisos de cada uno.
+          </span>
+        </div>
+      )}
 
       {/* Los permisos por rol solo sirven si cada persona entra con su propia
           cuenta. Stockio permite un solo dispositivo activo por cuenta (ver

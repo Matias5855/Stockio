@@ -89,6 +89,27 @@ describe('claves de permiso usadas en las rutas de API', () => {
 })
 
 /**
+ * Decision de negocio del 2026-09-25: dar de alta una persona es exclusivo del
+ * dueño. La pantalla de Empleados esconde el boton, pero lo que de verdad lo
+ * sostiene es la guarda de la ruta. Queda fijado acá porque aflojarlo a
+ * `gestionar_usuarios` para "que el admin pueda ayudar" es un cambio de una
+ * linea que nadie notaria.
+ */
+describe('invitar empleados es exclusivo del dueño', () => {
+  it('la ruta de invitar exige role owner', () => {
+    const ruta = path.resolve(__dirname, '../../app/api/empleados/invitar/route.ts')
+    const codigo = readFileSync(ruta, 'utf8')
+    expect(codigo).toMatch(/requireRole\(\s*\[\s*'owner'\s*\]\s*\)/)
+  })
+
+  it('ningun preset de rol otorga gestionar_usuarios', () => {
+    for (const [rol, permisos] of Object.entries(ROLES_PRESET)) {
+      expect(permisos.gestionar_usuarios, rol).toBe(false)
+    }
+  })
+})
+
+/**
  * Cada clave que se exige en el servidor tiene que ser otorgable: si ningun
  * preset la da y el owner tampoco, la accion queda muerta para todos.
  */
