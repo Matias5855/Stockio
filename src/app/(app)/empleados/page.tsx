@@ -114,14 +114,31 @@ export default function EmpleadosPage() {
     setTimeout(() => setMsg(null), 3000)
   }
 
+  // Los dos errores de abajo se tragaban, y en los dos casos el silencio
+  // engaña sobre un tema de acceso: creés que sacaste a alguien y sigue
+  // adentro, o que anulaste una invitación que todavía se puede aceptar.
   const eliminarEmpleado = async (id: string) => {
     if (!confirm('¿Eliminar este empleado? Perderá acceso al sistema.')) return
-    await supabase.from('profiles').delete().eq('id', id)
+    const { error } = await supabase.from('profiles').delete().eq('id', id)
+    if (error) {
+      setMsg({ text: `No se pudo eliminar al empleado: ${error.message}`, ok: false })
+      setTimeout(() => setMsg(null), 6000)
+      return
+    }
+    setMsg({ text: 'Empleado eliminado', ok: true })
+    setTimeout(() => setMsg(null), 4000)
     fetchData()
   }
 
   const cancelarInvitacion = async (id: string) => {
-    await supabase.from('invitaciones').delete().eq('id', id)
+    const { error } = await supabase.from('invitaciones').delete().eq('id', id)
+    if (error) {
+      setMsg({ text: `No se pudo cancelar la invitación: ${error.message}`, ok: false })
+      setTimeout(() => setMsg(null), 6000)
+      return
+    }
+    setMsg({ text: 'Invitación cancelada', ok: true })
+    setTimeout(() => setMsg(null), 4000)
     fetchData()
   }
 

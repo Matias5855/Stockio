@@ -105,7 +105,9 @@ export default function CuotasPage() {
     // encontrarla al cobrar la ultima cuota sin necesitar columna extra.
     if (cuotaCreada?.id) {
       const cuotaIdShort = String(cuotaCreada.id).slice(0, 8).toUpperCase()
-      await supabase.from('ventas').insert({
+      // Si esto falla el plan queda creado pero sin venta asociada, asi que el
+      // monto no aparece en Ventas y la ultima cuota no encuentra que cobrar.
+      const { error: errVenta } = await supabase.from('ventas').insert({
         org_id: orgId,
         nro_factura: `CTA-${cuotaIdShort}`,
         cliente_nombre: form.cliente_nombre,
@@ -116,6 +118,15 @@ export default function CuotasPage() {
         total: montoConInteres,
         notas: `Plan de cuotas: ${form.cantidad_cuotas} pagos de ${fmt(montoCuota)} (${form.frecuencia})`,
       })
+      if (errVenta) {
+        alert(
+          `El plan de cuotas se creó, pero no se pudo registrar la venta asociada: ` +
+          `${errVenta.message}
+
+El plan va a aparecer en Cuotas, pero el monto no ` +
+          `figura en Ventas.`
+        )
+      }
       logHistorial({
         accion: 'crear', entidad: 'cuota_plan', entidad_id: cuotaCreada.id,
         descripcion: `Plan de cuotas creado: ${form.cliente_nombre} · ${form.cantidad_cuotas} × ${fmt(montoCuota)} = ${fmt(montoConInteres)}`,
@@ -218,7 +229,11 @@ export default function CuotasPage() {
       })
       const data = await res.json()
       if (data.link) {
-        await supabase.from('cuotas_ventas').update({ mp_link_pago: data.link }).eq('id', cv.id)
+        // Si no se guarda, el link funciona igual ahora pero se pierde: la
+        // proxima vez hay que generarlo de nuevo. Se avisa sin cortar el cobro.
+        const { error: errLink } = await supabase
+          .from('cuotas_ventas').update({ mp_link_pago: data.link }).eq('id', cv.id)
+        if (errLink) console.warn('[Cuotas] link generado pero no guardado:', errLink.message)
         setQrModal({ link: data.link, nombre: cv.cliente_nombre, monto: cv.monto_cuota })
         fetchCuotas()
       } else {

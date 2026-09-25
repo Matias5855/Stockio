@@ -297,7 +297,10 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
     try {
       const res = await fetch('/api/arca/configurar')
       if (res.ok) setStatus(await res.json())
-    } catch {}
+      else console.warn('[ARCA] no se pudo leer la configuracion:', res.status)
+    } catch (e) {
+      console.warn('[ARCA] error leyendo la configuracion:', e)
+    }
   }
   useEffect(() => { cargarStatus() }, [])
 
@@ -645,7 +648,10 @@ function SuscripcionSection({ isDark }: { isDark: boolean }) {
     try {
       const res = await fetch('/api/suscripcion')
       if (res.ok) setSusc(await res.json())
-    } catch {}
+      else console.warn('[Suscripcion] no se pudo leer el estado:', res.status)
+    } catch (e) {
+      console.warn('[Suscripcion] error leyendo el estado:', e)
+    }
     setLoading(false)
   }, [])
 

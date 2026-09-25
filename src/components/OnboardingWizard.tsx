@@ -58,10 +58,15 @@ export default function OnboardingWizard({ orgId, initialOrgName, onDone }: Prop
   })
 
   const marcarCompletado = async () => {
-    // No bloqueamos al user si esto falla — el wizard ya cumplio.
-    await supabase.from('organizations')
+    // No se bloquea al usuario si falla — el wizard ya cumplio — pero se deja
+    // rastro: si esto no se guarda, el wizard reaparece en CADA ingreso y no
+    // hay forma de saber por que.
+    const { error } = await supabase.from('organizations')
       .update({ onboarding_completado: true })
       .eq('id', orgId)
+    if (error) {
+      console.error('[Onboarding] no se pudo marcar como completado:', error.message)
+    }
   }
 
   const skipAll = async () => {

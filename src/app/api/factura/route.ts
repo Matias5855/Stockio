@@ -88,10 +88,25 @@ export async function POST(req: NextRequest) {
         cae = resultado.cae
         cae_vencimiento = resultado.cae_vencimiento
 
-        // Guardar CAE en la venta para futuras referencias
-        await supabase.from('ventas').update({
+        // Guardar CAE en la venta para futuras referencias.
+        //
+        // Este error NO se puede tragar. Para cuando llegamos aca, AFIP YA
+        // autorizo la factura y consumio el numero: si el update falla, el
+        // comercio tiene un comprobante fiscal emitido del que no queda
+        // registro, y no hay forma de recuperarlo desde la app.
+        const { error: caeErr } = await supabase.from('ventas').update({
           notas: `CAE: ${cae} | Vto: ${cae_vencimiento}`,
         }).eq('id', venta_id)
+
+        if (caeErr) {
+          console.error('[Factura] CAE OBTENIDO PERO NO GUARDADO:', {
+            venta_id, cae, cae_vencimiento, error: caeErr.message,
+          })
+          // Se avisa al usuario con el CAE en el mensaje: es lo unico que le
+          // queda para anotarlo a mano antes de que se pierda.
+          arcaError = `La factura se emitió (CAE ${cae}, vence ${cae_vencimiento}) ` +
+                      `pero no se pudo guardar en el sistema. Anotá ese CAE.`
+        }
 
       } catch (arcaErr) {
         arcaError = arcaErr instanceof Error ? arcaErr.message : 'Error desconocido en ARCA'
