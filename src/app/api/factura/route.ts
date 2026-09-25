@@ -6,7 +6,7 @@ import { Resend } from 'resend'
 import { render } from '@react-email/components'
 import { crearARCAServiceCon, DatosFactura } from '@/lib/arca'
 import { ticketBase64, TicketData } from '@/lib/ticket'
-import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { requireOrgMember, exigirPermiso, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 // Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
@@ -34,6 +34,18 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     const { venta_id, email_cliente, usar_arca } = await parseBody(req, FacturaInputSchema)
+
+    // Esta ruta sirve dos acciones con exigencias distintas, y por eso el
+    // permiso se chequea aca y no arriba:
+    //  - usar_arca: true  -> emite CAE ante AFIP. Acto fiscal. La UI lo gatea
+    //    con `editar_ventas` (ventas/page.tsx:610), pero hasta ahora la ruta
+    //    aceptaba el flag de cualquier miembro de la org: se salteaba con un
+    //    POST a mano.
+    //  - usar_arca: false -> genera el PDF y lo manda por email. La UI NO lo
+    //    gatea (el boton ✉ lo ve cualquiera que vea ventas), asi que tampoco
+    //    se gatea aca. Exigir el permiso para todo el endpoint le sacaria a un
+    //    vendedor algo que hoy funciona.
+    if (usar_arca) exigirPermiso(profile, 'editar_ventas')
 
     // 1. Obtener venta y validar que pertenezca a la org del usuario
     const { data: venta } = await supabase

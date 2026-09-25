@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { requirePermiso, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 // Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
@@ -13,7 +13,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const { supabase, profile } = await requireOrgMember()
+    // Mismo permiso con el que la UI muestra el boton de generar el link
+    // (cuotas/page.tsx:496). Antes bastaba con pertenecer a la org.
+    const { supabase, profile } = await requirePermiso('gestionar_cuotas')
 
     const { cuota_venta_id, cliente_email, monto, descripcion } =
       await parseBody(req, LinkPagoInputSchema)

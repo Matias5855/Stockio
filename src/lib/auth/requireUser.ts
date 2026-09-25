@@ -2,14 +2,16 @@
  * Helpers de auth para API routes.
  *
  * - requireUser: garantiza sesión válida, retorna { user, supabase }.
- * - requireOrgMember: ademas trae profile (org_id, role) y valida que pertenezca a una org.
+ * - requireOrgMember: ademas trae profile (org_id, role, permisos) y valida que pertenezca a una org.
  * - requireRole: ademas verifica que el role del profile este en una whitelist.
+ * - requirePermiso: ademas verifica una clave del catalogo de permisos.
  *
  * Lanzan AuthError con status HTTP correspondiente. Las routes hacen
  * `try { ... } catch (e) { if (e instanceof AuthError) return NextResponse.json(...) }`.
  */
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { tienePermiso, type Permisos } from './permisos'
 
 export class AuthError extends Error {
   status: number
@@ -29,6 +31,12 @@ export type Profile = {
   id: string
   org_id: string
   role: string
+  /**
+   * Las 14 claves de src/lib/auth/permisos.ts. Puede venir null en un profile
+   * viejo que db/permisos_completos.sql no haya alcanzado: tienePermiso() lo
+   * lee como "no tiene", asi que falla cerrado.
+   */
+  permisos: Permisos
 }
 
 export type AuthContext = {
@@ -53,7 +61,7 @@ export async function requireOrgMember(): Promise<OrgAuthContext> {
   const ctx = await requireUser()
   const { data: profile, error } = await ctx.supabase
     .from('profiles')
-    .select('id, org_id, role')
+    .select('id, org_id, role, permisos')
     .eq('id', ctx.user.id)
     .single()
   if (error || !profile || !profile.org_id) {
@@ -71,6 +79,33 @@ export async function requireRole(allowed: readonly string[]): Promise<OrgAuthCo
   if (!allowed.includes(ctx.profile.role)) {
     throw new AuthError('Permisos insuficientes', 403)
   }
+  return ctx
+}
+
+/**
+ * Corta con 403 si el profile no tiene la clave. `owner` pasa siempre
+ * (tienePermiso lo bypasea).
+ *
+ * Existe aparte de requirePermiso porque hay rutas que sirven dos acciones con
+ * exigencias distintas segun el body — /api/factura emite CAE o manda el ticket
+ * por mail — y ahi el permiso no se puede chequear antes de parsear el body.
+ */
+export function exigirPermiso(profile: Profile, clave: string): void {
+  if (!tienePermiso(profile.permisos, profile.role, clave)) {
+    throw new AuthError('Permisos insuficientes', 403)
+  }
+}
+
+/**
+ * Garantiza que el usuario pertenezca a una org Y tenga la clave de permiso
+ * pedida. Es el equivalente servidor de usePermiso() en el cliente: hasta
+ * ahora las rutas miraban solo `role`, asi que las acciones que 1.4.E gateo por
+ * permiso se cumplian unicamente en la interfaz — con un POST a mano se
+ * saltaban. Las claves validas son las de PERMISOS_LABELS.
+ */
+export async function requirePermiso(clave: string): Promise<OrgAuthContext> {
+  const ctx = await requireOrgMember()
+  exigirPermiso(ctx.profile, clave)
   return ctx
 }
 

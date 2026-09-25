@@ -16,7 +16,7 @@
  * cobro de cuotas con `tipo: 'cuota_cliente'`.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { requirePermiso, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseBody, CobroVentaInputSchema, ValidationError } from '@/lib/schemas'
 
@@ -24,7 +24,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const { profile } = await requireOrgMember()
+    // Mismo permiso con el que la UI muestra el boton de cobrar por QR
+    // (ventas/page.tsx:630). Antes bastaba con pertenecer a la org.
+    const { profile } = await requirePermiso('editar_ventas')
     const { venta_id } = await parseBody(req, CobroVentaInputSchema)
 
     const admin = createAdminClient()

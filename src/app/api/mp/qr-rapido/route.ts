@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOrgMember, AuthError } from '@/lib/auth/requireUser'
+import { requirePermiso, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 // Los secretos del negocio (mp_access_token, certificados de ARCA) ya no son
@@ -13,7 +13,14 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const { profile } = await requireOrgMember()
+    // El unico lugar que llama a esta ruta es el widget QuickQR de
+    // Configuracion (configuracion/page.tsx:551), y a esa pagina se entra con
+    // `ver_configuracion`. Se exige la misma clave para no dejar el boton
+    // visible y la ruta rechazando, que es el patron de bug que veniamos
+    // arrastrando. Es un permiso de "ver" gateando una accion de cobro: si
+    // alguna vez se quiere separar, la clave natural seria `crear_ventas`,
+    // pero eso hay que cambiarlo en los dos lados a la vez.
+    const { profile } = await requirePermiso('ver_configuracion')
     const { monto, descripcion } = await parseBody(req, QrRapidoInputSchema)
 
     const { data: org } = await createAdminClient()
