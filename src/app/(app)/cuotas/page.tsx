@@ -1,49 +1,26 @@
 'use client'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { logHistorial } from '@/lib/historial'
 import { usePermiso } from '@/lib/auth/usePermiso'
+import { useCuotas, type CuotaVenta } from '@/lib/hooks/useCuotas'
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-AR')
 const supabase = createClient()
 
-type CuotaPago = {
-  id: string
-  nro_cuota: number
-  monto: number
-  fecha_venc: string
-  fecha_pago: string | null
-  estado: 'pendiente' | 'pagada' | 'vencida'
-  metodo_pago: string
-  mp_payment_id: string | null
-}
-
-type CuotaVenta = {
-  id: string
-  cliente_nombre: string
-  cliente_email: string | null
-  cliente_tel: string | null
-  monto_total: number
-  monto_pagado: number
-  cantidad_cuotas: number
-  cuotas_pagadas: number
-  monto_cuota: number
-  interes_pct: number
-  frecuencia: string
-  estado: string
-  proximo_venc: string | null
-  mp_link_pago: string | null
-  cuota_pagos?: CuotaPago[]
-}
+// Los tipos viven en el hook: los comparte con useTableSync, que es quien
+// cachea estas filas en IndexedDB.
 
 export default function CuotasPage() {
   // ver_cuotas (lo aplica el layout) deja mirar los planes; gestionar_cuotas
   // es lo que habilita crear planes, cobrar y generar links de pago.
   const puedeGestionar = usePermiso('gestionar_cuotas')
-  const [cuotas, setCuotas] = useState<CuotaVenta[]>([])
-  const [loading, setLoading] = useState(true)
+  // Los planes se leen por useTableSync: quedan cacheados en IndexedDB, asi que
+  // sin señal se sigue viendo quien debe y cuando vence. Escribir (crear un
+  // plan, cobrar una cuota) sigue siendo online — el por que esta en useCuotas.
+  const { cuotas, loading, refetch: fetchCuotas } = useCuotas()
   const [modal, setModal] = useState(false)
   const [detalle, setDetalle] = useState<CuotaVenta | null>(null)
   const [generandoLink, setGenerandoLink] = useState(false)
@@ -63,18 +40,6 @@ export default function CuotasPage() {
     monto_total: '', cantidad_cuotas: '3', interes_pct: '0',
     frecuencia: 'mensual', fecha_inicio: new Date().toISOString().split('T')[0],
   })
-
-  const fetchCuotas = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase
-      .from('cuotas_ventas')
-      .select('*, cuota_pagos(*)')
-      .order('created_at', { ascending: false })
-    setCuotas((data ?? []) as CuotaVenta[])
-    setLoading(false)
-  }, [])
-
-  useEffect(() => { fetchCuotas() }, [fetchCuotas])
 
   const montoConInteres = form.monto_total && form.interes_pct
     ? +form.monto_total * (1 + +form.interes_pct / 100)

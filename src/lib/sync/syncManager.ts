@@ -11,7 +11,21 @@ type PendingItem = {
   timestamp: number
 }
 
-type Tabla = 'productos' | 'ventas' | 'movimientos'
+/**
+ * `cuotas_ventas` esta solo para BAJAR (pull). Subir cuotas creadas offline es
+ * otro problema y no se resuelve con este mecanismo:
+ *
+ *  · Las filas de cuota_pagos las genera el trigger generar_cuotas() en el
+ *    servidor al insertar el plan. Offline habria que simularlas, y al
+ *    sincronizar el servidor crearia las suyas con otros ids.
+ *  · Cobrar una cuota son cuatro escrituras en tres tablas. La cola las sube
+ *    de a una y sin transaccion, asi que podria entrar el pago y no el ingreso
+ *    en caja — el bug exacto que arreglamos en db/rls_fase_c1_cuotas_caja.sql.
+ *
+ * Eso necesita una RPC transaccional e idempotente por id local, como
+ * crear_venta_segura(). Mientras no exista, cobrar y crear planes es online.
+ */
+type Tabla = 'productos' | 'ventas' | 'movimientos' | 'cuotas_ventas'
 
 // Cada cuanto forzar full pull para limpiar registros borrados que el delta no detecta
 const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24h
@@ -118,11 +132,15 @@ class SyncManager {
     const now = new Date().toISOString()
 
     const buildSelect = () => {
-      const selectStr = tabla === 'ventas' ? '*, venta_items(*)' : '*'
+      const selectStr =
+        tabla === 'ventas' ? '*, venta_items(*)'
+        : tabla === 'cuotas_ventas' ? '*, cuota_pagos(*)'
+        : '*'
       let q = this.supabase.from(tabla).select(selectStr).eq('org_id', orgId)
       if (tabla === 'productos') q = q.eq('activo', true)
       if (tabla === 'ventas') q = q.order('fecha', { ascending: false }).limit(100)
       if (tabla === 'movimientos') q = q.order('fecha', { ascending: false }).limit(200)
+      if (tabla === 'cuotas_ventas') q = q.order('created_at', { ascending: false }).limit(100)
       return q
     }
 
@@ -161,35 +179,28 @@ class SyncManager {
       if (!orgId) return
 
       // Full pull cada 24h para limpiar fantasmas (registros borrados en servidor)
-      const fullProductos = opts?.force || this.shouldFullSync('productos')
-      const fullVentas = opts?.force || this.shouldFullSync('ventas')
-      const fullMovimientos = opts?.force || this.shouldFullSync('movimientos')
+      const tablas: Tabla[] = ['productos', 'ventas', 'movimientos', 'cuotas_ventas']
+      const full = new Map(tablas.map(t => [t, Boolean(opts?.force) || this.shouldFullSync(t)]))
 
-      const [productos, ventas, movimientos] = await Promise.all([
-        this.fetchDelta('productos', orgId, { full: fullProductos }),
-        this.fetchDelta('ventas', orgId, { full: fullVentas }),
-        this.fetchDelta('movimientos', orgId, { full: fullMovimientos }),
-      ])
+      const resultados = await Promise.all(
+        tablas.map(t => this.fetchDelta(t, orgId, { full: full.get(t)! }))
+      )
 
       // Si fue full pull → reemplazar todo. Si fue delta → solo actualizar lo modificado.
-      const tx = db.transaction(['productos', 'ventas', 'movimientos'], 'readwrite')
+      const tx = db.transaction(tablas, 'readwrite')
       const ops: Promise<unknown>[] = []
-      const prodStore = tx.objectStore('productos')
-      const ventaStore = tx.objectStore('ventas')
-      const movStore = tx.objectStore('movimientos')
 
-      if (fullProductos) ops.push(prodStore.clear())
-      if (fullVentas) ops.push(ventaStore.clear())
-      if (fullMovimientos) ops.push(movStore.clear())
-
-      for (const p of productos) ops.push(prodStore.put({ ...p, syncStatus: 'synced' }))
-      for (const v of ventas) ops.push(ventaStore.put({ ...v, syncStatus: 'synced' }))
-      for (const m of movimientos) ops.push(movStore.put({ ...m, syncStatus: 'synced' }))
+      tablas.forEach((t, i) => {
+        const store = tx.objectStore(t)
+        if (full.get(t)) ops.push(store.clear())
+        for (const fila of resultados[i]) ops.push(store.put({ ...fila, syncStatus: 'synced' }))
+      })
 
       await Promise.all([...ops, tx.done])
 
-      const totalDelta = productos.length + ventas.length + movimientos.length
-      console.log(`[SyncManager] Pull OK — ${totalDelta} registros (full: p=${fullProductos} v=${fullVentas} m=${fullMovimientos})`)
+      const totalDelta = resultados.reduce((n, r) => n + r.length, 0)
+      const detalle = tablas.map(t => `${t}=${full.get(t)}`).join(' ')
+      console.log(`[SyncManager] Pull OK — ${totalDelta} registros (full: ${detalle})`)
     } catch (err) {
       console.error('[SyncManager] Error en pull:', err)
     }
@@ -283,9 +294,9 @@ class SyncManager {
 
   // Limpiar timestamps de sync (al cerrar sesion)
   clearSyncState() {
-    localStorage.removeItem(this.lastSyncKey('productos'))
-    localStorage.removeItem(this.lastSyncKey('ventas'))
-    localStorage.removeItem(this.lastSyncKey('movimientos'))
+    for (const t of ['productos', 'ventas', 'movimientos', 'cuotas_ventas'] as Tabla[]) {
+      localStorage.removeItem(this.lastSyncKey(t))
+    }
     this.authError = false
     localStorage.removeItem(AUTH_FLAG_KEY)
   }

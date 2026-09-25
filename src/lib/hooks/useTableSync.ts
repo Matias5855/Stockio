@@ -26,7 +26,7 @@ import { cacheLocal, getLocal } from '@/lib/db/indexeddb'
 import { syncManager } from '@/lib/sync/syncManager'
 import { debounce } from '@/lib/utils/debounce'
 
-export type TableName = 'productos' | 'ventas' | 'movimientos'
+export type TableName = 'productos' | 'ventas' | 'movimientos' | 'cuotas_ventas'
 
 export type UseTableSyncOptions<T> = {
   /** Nombre de la tabla en Supabase / IndexedDB */
