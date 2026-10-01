@@ -133,6 +133,13 @@ export function useVentas() {
           const prod = msg.split('STOCK_INSUFICIENTE:')[1]?.trim() || 'un producto'
           throw new Error(`No hay stock suficiente de "${prod}". La venta no se registró.`)
         }
+        // La RPC ahora valida `crear_ventas` (db/rls_fase_c3_crear_venta.sql).
+        // En la practica no deberia verse: el boton ya esta escondido para quien
+        // no tiene el permiso. Se traduce igual para no mostrar el prefijo
+        // tecnico si alguien llega por otro camino.
+        if (msg.includes('SIN_PERMISO')) {
+          throw new Error('No tenés permiso para registrar ventas.')
+        }
         throw new Error(msg)
       }
 

@@ -73,13 +73,27 @@ BEGIN
   END IF;
 
   -- Idempotencia: si la venta ya existe (re-sync offline), no repetir nada.
-  IF p_venta_id IS NOT NULL AND EXISTS (SELECT 1 FROM ventas WHERE id = p_venta_id) THEN
+  -- El filtro por org_id importa: esta funcion es SECURITY DEFINER, asi que sin
+  -- el se podia leer el nro_factura de una venta de otro negocio pasando su id.
+  IF p_venta_id IS NOT NULL AND EXISTS (
+       SELECT 1 FROM ventas WHERE id = p_venta_id AND org_id = v_org_id
+     ) THEN
     RETURN jsonb_build_object(
       'id', p_venta_id,
-      'nro_factura', (SELECT nro_factura FROM ventas WHERE id = p_venta_id),
+      'nro_factura', (SELECT nro_factura FROM ventas
+                       WHERE id = p_venta_id AND org_id = v_org_id),
       'sin_stock', '[]'::jsonb,
       'ya_existia', true
     );
+  END IF;
+
+  -- C3: el permiso, que hasta la fase C3 solo se cumplia en la interfaz. Va
+  -- DESPUES del corte por idempotencia: si la venta ya existe no se escribe
+  -- nada, y fallar ahi seria un error inutil sobre una operacion vacia.
+  -- No se usa ERRCODE 42501 a proposito: syncManager.ts lo leeria como error de
+  -- autenticacion y mostraria "tu sesion se cerro en otro dispositivo".
+  IF NOT tiene_permiso('crear_ventas') THEN
+    RAISE EXCEPTION 'SIN_PERMISO: no tenés permiso para registrar ventas';
   END IF;
 
   -- Validar stock por PRODUCTO (agregando cantidades de líneas repetidas),

@@ -1,6 +1,7 @@
 'use client'
 import { createClient } from '@/lib/supabase/client'
 import { getPendingSync, markSynced, getLocalDB } from '@/lib/db/indexeddb'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 type PendingItem = {
   id: string
@@ -47,10 +48,30 @@ export const SYNC_AUTH_EVENT = 'syncAuthError'
  */
 function esErrorDeAuth(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
+  if (esErrorDePermiso(err)) return false   // falta de permiso no es sesion caida
   const e = err as { code?: string; status?: number; message?: string }
   if (e.status === 401 || e.status === 403) return true
   if (e.code === 'PGRST301' || e.code === '42501') return true
   return /jwt|token|refresh|unauthorized|not authenticated/i.test(e.message ?? '')
+}
+
+/**
+ * "No tenés permiso" es distinto de "tu sesion no vale mas", y confundirlos le
+ * daria al usuario el mensaje equivocado: le pediriamos volver a iniciar sesion
+ * para algo que no se arregla iniciando sesion.
+ *
+ * Pasa cuando a alguien le sacan `crear_ventas` mientras tenia ventas
+ * encoladas sin subir: crear_venta_segura() las rechaza (ver
+ * db/rls_fase_c3_crear_venta.sql). Las ventas YA se hicieron en el mostrador,
+ * asi que no se descartan — quedan en la cola, y el reintento va a seguir
+ * fallando hasta que el dueño le devuelva el permiso. Lo importante es que eso
+ * NO pase inadvertido: sin este camino el error se reintentaba en silencio para
+ * siempre y la venta no llegaba nunca al servidor.
+ */
+function esErrorDePermiso(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { message?: string }
+  return /SIN_PERMISO/i.test(e.message ?? '')
 }
 
 class SyncManager {
@@ -283,6 +304,19 @@ class SyncManager {
       // No se llama a markSynced: el item queda en la cola y se reintenta en
       // el proximo sync. Si el motivo fue la sesion, se avisa al usuario.
       if (esErrorDeAuth(err)) this.authError = true
+
+      // Falta de permiso: el reintento no lo va a arreglar nunca, asi que se
+      // reporta con contexto en vez de quedar como un error de consola mas
+      // entre miles. El item NO se descarta: la venta se hizo de verdad.
+      if (esErrorDePermiso(err)) {
+        reportarFalla('sync/sin-permiso', err, {
+          tabla: item.tabla,
+          recordId: item.recordId,
+          encoladoEn: new Date(item.timestamp).toISOString(),
+        })
+        return
+      }
+
       console.error(`[SyncManager] Error sincronizando ${item.tabla}:`, err)
     }
   }
