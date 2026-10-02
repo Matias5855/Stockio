@@ -345,18 +345,6 @@ function AppLayoutInner() {
     return dias > 0 && dias <= 7 ? dias : null
   })()
 
-  // Va antes que el paywall: si perdiste la sesión no podés hacer nada acá, ni
-  // siquiera pagar, y hay una acción concreta para tomar ahora mismo.
-  if (sesionDesplazada) {
-    return (
-      <SesionDesplazada
-        isDark={isDark}
-        onRecuperar={() => setSesionDesplazada(false)}
-        onCerrarSesion={handleLogout}
-      />
-    )
-  }
-
   // Si esta vencida, mostramos SOLO el paywall (bloquea todo el contenido)
   if (necesitaPaywall && suscripcion) {
     return (
@@ -400,22 +388,31 @@ function AppLayoutInner() {
           </div>
         )}
 
-        {/* Banner sesion revocada — va arriba de todo y en rojo porque, a
-            diferencia del banner offline, aca los cambios NO se estan
-            guardando en el servidor y hace falta que el usuario actue. */}
+        {/* La cuenta se abrio en otro dispositivo. Aviso que se cierra, no
+            bloqueo: ver el comentario del componente. */}
+        {sesionDesplazada && <SesionDesplazada onCerrar={() => setSesionDesplazada(false)} />}
+
+        {/* Aviso de sesion vencida para sincronizar.
+            Antes era una barra roja que decia "tu sesion se cerro en otro
+            dispositivo". Era falso por construccion: la sesion unica de Stockio
+            (db/sesion_unica.sql) NO revoca el JWT del otro equipo, asi que este
+            aviso nunca puede saber eso — el desplazo entre dispositivos lo
+            detecta y lo muestra SesionDesplazada, por otro camino. Lo unico que
+            este aviso sabe es que el servidor rechazo la sesion al sincronizar.
+            Va en el mismo tono que el aviso offline, no en rojo. */}
         {requiereReauth && !avisoReauthCerrado && (
           <div style={{
-            background: COLORS.danger, color: '#FFFFFF', padding: '10px 20px',
+            background: COLORS.warning, color: '#FFFFFF', padding: '8px 20px',
             fontSize: 13, fontWeight: 600, flexShrink: 0, zIndex: 100,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap',
           }}>
             <span style={{ textAlign: 'center' }}>
-              ⚠ Tu sesión se cerró en otro dispositivo. Iniciá sesión de nuevo
-              para seguir sincronizando — lo que hayas cargado acá no se pierde.
+              Tu sesión venció y hay cambios sin subir. Volvé a iniciar sesión
+              para sincronizarlos — lo que cargaste acá no se pierde.
             </span>
             <button onClick={handleReautenticar} style={{
-              background: '#FFFFFF', color: COLORS.danger, border: 'none',
-              borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              background: '#FFFFFF', color: COLORS.warning, border: 'none',
+              borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>
               Iniciar sesión
             </button>

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { logHistorial } from '@/lib/historial'
 import { usePermiso } from '@/lib/auth/usePermiso'
-import { useCuotas, type CuotaVenta } from '@/lib/hooks/useCuotas'
+import { useCuotas, type CuotaVenta, type ResultadoCobro } from '@/lib/hooks/useCuotas'
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-AR')
 const supabase = createClient()
@@ -20,9 +20,20 @@ export default function CuotasPage() {
   // Los planes se leen por useTableSync: quedan cacheados en IndexedDB, asi que
   // sin señal se sigue viendo quien debe y cuando vence. Escribir (crear un
   // plan, cobrar una cuota) sigue siendo online — el por que esta en useCuotas.
-  const { cuotas, loading, refetch: fetchCuotas } = useCuotas()
+  const { cuotas, loading, refetch: fetchCuotas, cobrarCuota, puedeCrearPlan } = useCuotas()
   const [modal, setModal] = useState(false)
   const [detalle, setDetalle] = useState<CuotaVenta | null>(null)
+
+  // El modal de detalle muestra una COPIA del plan, asi que despues de cobrar
+  // mostraba los valores viejos. Antes se intentaba refrescar a mano dentro de
+  // registrarPago, pero leia `cuotas` antes de que el refetch actualizara el
+  // estado: siempre tomaba la version anterior. Acá se re-sincroniza cuando la
+  // lista cambia de verdad, venga el cambio de un cobro o de Realtime.
+  useEffect(() => {
+    if (!detalle) return
+    const actualizado = cuotas.find(c => c.id === detalle.id)
+    if (actualizado && actualizado !== detalle) setDetalle(actualizado)
+  }, [cuotas, detalle])
   const [generandoLink, setGenerandoLink] = useState(false)
   const [filtro, setFiltro] = useState('todas')
 
@@ -108,74 +119,50 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
   // no aparecia en Finanzas, sin ningun aviso. Ahora cada paso se verifica y,
   // si algo falla despues de marcar el pago, se dice exactamente que quedo sin
   // registrar: es plata, el usuario tiene que poder corregirlo a mano.
+  // Las cuatro escrituras (cuota, plan, caja, venta) ahora van adentro de
+  // registrar_pago_cuota(), en una sola transaccion. Antes iban sueltas desde
+  // acá: si fallaba alguna del medio, la cuota quedaba pagada y la plata no
+  // entraba en Finanzas, y lo unico que se podia hacer era avisarle al usuario
+  // que lo corrigiera a mano. Ademas los contadores del plan se calculaban aca
+  // (leer, sumar uno, escribir el valor absoluto), asi que dos cobros
+  // simultaneos se pisaban y uno se perdia; adentro de la RPC se incrementan en
+  // SQL, que es atomico. Y al ser idempotente, se puede cobrar sin señal.
   const registrarPago = async (cuotaPagoId: string, cuotaVentaId: string, monto: number) => {
-    const orgId = localStorage.getItem('stk_org_id')
+    const cv = cuotas.find(c => c.id === cuotaVentaId)
 
-    const { error: errPago } = await supabase.from('cuota_pagos').update({
-      estado: 'pagada',
-      fecha_pago: new Date().toISOString().split('T')[0],
-      metodo_pago: 'efectivo',
-    }).eq('id', cuotaPagoId)
-
-    // Si este falla no se hizo nada todavia: se corta y no queda estado a medias.
-    if (errPago) {
-      alert(`No se pudo registrar el pago: ${errPago.message}`)
+    let res: ResultadoCobro
+    try {
+      res = await cobrarCuota(cuotaPagoId, cuotaVentaId, monto)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error desconocido'
+      alert(
+        msg.includes('SIN_PERMISO') ? 'No tenés permiso para cobrar cuotas.'
+        : `No se pudo registrar el pago: ${msg}`
+      )
       return
     }
 
-    const cv = cuotas.find(c => c.id === cuotaVentaId)
-    if (cv) {
-      const nuevoPagado = cv.monto_pagado + monto
-      const nuevasCuotasPagadas = cv.cuotas_pagadas + 1
-      const completada = nuevasCuotasPagadas >= cv.cantidad_cuotas
-      const pendientes: string[] = []
-
-      const { error: errPlan } = await supabase.from('cuotas_ventas').update({
-        monto_pagado: nuevoPagado,
-        cuotas_pagadas: nuevasCuotasPagadas,
-        estado: completada ? 'completada' : 'activa',
-      }).eq('id', cuotaVentaId)
-      if (errPlan) pendientes.push('el total del plan de pago')
-
-      if (orgId) {
-        const { error: errMov } = await supabase.from('movimientos').insert({
-          descripcion: `Cobro cuota ${cv.cliente_nombre} (${nuevasCuotasPagadas}/${cv.cantidad_cuotas})`,
-          tipo: 'ingreso',
-          categoria_nombre: 'Cuotas',
-          monto,
-          fecha: new Date().toISOString().split('T')[0],
-          org_id: orgId,
-          venta_id: null,
-        })
-        if (errMov) pendientes.push('el ingreso en Finanzas')
-      }
-
-      // Si se completaron todas las cuotas → marcar la venta vinculada como cobrada
-      if (completada) {
-        const cuotaIdShort = String(cuotaVentaId).slice(0, 8).toUpperCase()
-        const { error: errVenta } = await supabase.from('ventas')
-          .update({ estado: 'cobrada' })
-          .eq('nro_factura', `CTA-${cuotaIdShort}`)
-        if (errVenta) pendientes.push('la venta vinculada como cobrada')
-      }
-
-      if (pendientes.length > 0) {
-        alert(
-          `El pago de $${monto.toLocaleString('es-AR')} quedo registrado, pero no se pudo actualizar ` +
-          `${pendientes.join(' ni ')}. Revisalo a mano o pedile al dueño que lo corrija.`
-        )
-      }
-
-      logHistorial({
-        accion: 'cobrar', entidad: 'cuota_pago', entidad_id: cuotaPagoId,
-        descripcion: `Cobro de cuota ${nuevasCuotasPagadas}/${cv.cantidad_cuotas} de ${cv.cliente_nombre} ($${monto.toLocaleString('es-AR')})${completada ? ' — PLAN COMPLETADO' : ''}`,
-      })
+    // La cuota ya figuraba cobrada (doble clic, o el cliente pagó por link
+    // mientras tanto). No es un error, pero hay que decirlo: si no, el vendedor
+    // puede pensar que no se registró y cobrarla de nuevo en mano.
+    if (res.yaEstaba) {
+      alert('Esa cuota ya figuraba pagada. No se cobró de nuevo.')
+      return
     }
-    fetchCuotas()
-    if (detalle?.id === cuotaVentaId) {
-      const updated = cuotas.find(c => c.id === cuotaVentaId)
-      if (updated) setDetalle(updated)
+
+    // Va con alert, como el resto de los avisos de esta pantalla, y porque el
+    // vendedor TIENE que enterarse de que el cobro todavía no llegó al servidor.
+    if (res.offline) {
+      alert(
+        `Cobro de $${monto.toLocaleString('es-AR')} guardado sin conexión.\n\n` +
+        'Se sube solo cuando vuelva internet. No cierres la sesión hasta entonces.'
+      )
     }
+
+    logHistorial({
+      accion: 'cobrar', entidad: 'cuota_pago', entidad_id: cuotaPagoId,
+      descripcion: `Cobro de cuota ${res.cuotasPagadas}/${cv?.cantidad_cuotas ?? '?'} de ${cv?.cliente_nombre ?? ''} ($${monto.toLocaleString('es-AR')})${res.completada ? ' — PLAN COMPLETADO' : ''}`,
+    })
   }
 
   const [qrModal, setQrModal] = useState<{ link: string; nombre: string; monto: number } | null>(null)
@@ -252,12 +239,22 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
         </div>
         {/* Crear planes y cobrar cuotas es mover plata: va detras de
             gestionar_cuotas, aparte de ver_cuotas que solo deja mirar. */}
+        {/* Cobrar una cuota sí funciona sin señal (va por la cola), pero CREAR
+            un plan no: las cuotas las genera un trigger en el servidor. Se
+            deshabilita y se dice por qué, en vez de dejar que falle al tocar. */}
         {puedeGestionar && (
-        <button onClick={() => setModal(true)} style={{
-          background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
-          padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
-          boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
-        }}>
+        <button
+          onClick={() => setModal(true)}
+          disabled={!puedeCrearPlan}
+          title={puedeCrearPlan ? undefined : 'Necesitás conexión para armar un plan de cuotas. Cobrar sí funciona sin señal.'}
+          style={{
+            background: puedeCrearPlan ? COLORS.primary : t.border,
+            color: puedeCrearPlan ? '#fff' : t.textMuted,
+            border: 'none', borderRadius: 8,
+            padding: '10px 18px', cursor: puedeCrearPlan ? 'pointer' : 'not-allowed',
+            fontWeight: 700, fontSize: 13,
+            boxShadow: puedeCrearPlan ? '0 4px 12px rgba(13,148,136,0.2)' : 'none',
+          }}>
           + Nueva cuota
         </button>
         )}

@@ -28,6 +28,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // construye ya con el cliente falso.
 
 const markSynced = vi.fn()
+const quitarDeCola = vi.fn()
 const getPendingSync = vi.fn()
 const reportarFalla = vi.fn()
 
@@ -97,6 +98,7 @@ vi.mock('@/lib/supabase/client', () => ({
 vi.mock('@/lib/db/indexeddb', () => ({
   getPendingSync: () => getPendingSync(),
   markSynced: (...a: unknown[]) => markSynced(...a),
+  quitarDeCola: (...a: unknown[]) => quitarDeCola(...a),
   // El pull no es lo que se está probando: se le da una base que acepta todo.
   getLocalDB: async () => ({
     transaction: () => ({
@@ -301,6 +303,67 @@ describe('falta de permiso no es sesión caída', () => {
   })
 })
 
+/**
+ * El cartel "iniciá sesión de nuevo" aparecía en cada recarga sin que la sesión
+ * tuviera nada. Dos causas, las dos por tratar como sesión caída algo que no lo
+ * es. Como el ítem rechazado no sube nunca, el cartel tampoco se iba nunca.
+ */
+describe('falsos positivos del aviso de reautenticación', () => {
+  it('un rechazo de RLS (42501) sobre una fila común no pide reautenticar', async () => {
+    estado.errorPorTabla.set('productos', {
+      code: '42501', message: 'new row violates row-level security policy for table "productos"',
+    })
+    getPendingSync.mockResolvedValue([enCola()])
+    await syncManager.sync()
+    expect(syncManager.requiereReautenticacion).toBe(false)
+    // Pero no pasa en silencio: no va a subir nunca por más que se reintente.
+    expect(reportarFalla).toHaveBeenCalledOnce()
+    expect(markSynced).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Lo que había en producción: ~100 'update' de movimientos del 23/9, restos
+   * de cuando useTableSync cacheaba con saveLocal. La base los rechazaba por
+   * RLS en cada sync. Ningún camino legítimo encola un 'update' de movimientos
+   * (solo se crean y se borran), así que se descartan sin subirlos.
+   */
+  it('descarta los update fantasma de movimientos sin intentar subirlos', async () => {
+    getPendingSync.mockResolvedValue([
+      enCola({ id: 'f1', tabla: 'movimientos', recordId: 'm1', operacion: 'update' }),
+      enCola({ id: 'f2', tabla: 'movimientos', recordId: 'm1', operacion: 'update' }),
+    ])
+    await syncManager.sync()
+    expect(quitarDeCola).toHaveBeenCalledWith('f1')
+    expect(quitarDeCola).toHaveBeenCalledWith('f2')
+    expect(estado.llamadas.filter(l => l.tipo === 'upsert')).toHaveLength(0)
+  })
+
+  it('pero un insert o un delete de movimientos NO es fantasma: se sube', async () => {
+    getPendingSync.mockResolvedValue([
+      enCola({ id: 'real', tabla: 'movimientos', recordId: 'm2', operacion: 'insert' }),
+    ])
+    await syncManager.sync()
+    expect(quitarDeCola).not.toHaveBeenCalled()
+    expect(markSynced).toHaveBeenCalledWith('movimientos', 'm2', 'real')
+  })
+
+  it('que getUser falle por red no pide reautenticar, y la cola queda intacta', async () => {
+    estado.errorDeSesion = { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' }
+    getPendingSync.mockResolvedValue([enCola()])
+    await syncManager.sync()
+    expect(syncManager.requiereReautenticacion).toBe(false)
+    expect(markSynced).not.toHaveBeenCalled()
+    expect(estado.llamadas.filter(l => l.tipo === 'upsert')).toHaveLength(0)
+  })
+
+  it('un JWT vencido sí lo pide', async () => {
+    estado.errorPorTabla.set('productos', { code: 'PGRST301', message: 'JWT expired' })
+    getPendingSync.mockResolvedValue([enCola()])
+    await syncManager.sync()
+    expect(syncManager.requiereReautenticacion).toBe(true)
+  })
+})
+
 describe('el aviso de reautenticación', () => {
   it('se enciende con un error de sesión y se apaga solo cuando vuelve a andar', async () => {
     estado.errorDeSesion = { message: 'JWT expired' }
@@ -318,6 +381,66 @@ describe('el aviso de reautenticación', () => {
     getPendingSync.mockResolvedValue([])
     await syncManager.sync()
     expect(syncManager.requiereReautenticacion).toBe(false)
+  })
+})
+
+/**
+ * El cobro de cuotas offline no encola una fila sino una LLAMADA: toca cuatro
+ * tablas y tiene que entrar atómico, así que lo que se repite al reconectar es
+ * registrar_pago_cuota(), no un upsert.
+ */
+describe('acciones encoladas (cobro de cuotas offline)', () => {
+  function cobroEnCola(over: Record<string, unknown> = {}) {
+    return {
+      id: 'rpc_1',
+      tabla: 'registrar_pago_cuota',
+      recordId: 'cp1',
+      operacion: 'rpc' as const,
+      data: {
+        _rpc: 'registrar_pago_cuota',
+        args: { p_cuota_pago_id: 'cp1', p_metodo: 'efectivo', p_movimiento_id: 'mov1' },
+      },
+      timestamp: Date.now(),
+      ...over,
+    }
+  }
+
+  it('llama a la RPC con los argumentos que se guardaron', async () => {
+    getPendingSync.mockResolvedValue([cobroEnCola()])
+    await syncManager.sync()
+
+    const rpc = estado.llamadas.find(l => l.tipo === 'rpc')
+    expect(rpc!.tabla).toBe('registrar_pago_cuota')
+    expect((rpc!.args as Record<string, unknown>).p_cuota_pago_id).toBe('cp1')
+    // El id del movimiento se genera offline y viaja: el ingreso que ya se
+    // mostró local y el que crea el servidor tienen que ser la MISMA fila, si
+    // no Finanzas cuenta la plata dos veces.
+    expect((rpc!.args as Record<string, unknown>).p_movimiento_id).toBe('mov1')
+  })
+
+  /**
+   * markSynced abre una transacción sobre el store de la tabla del ítem, y acá
+   * `tabla` es el nombre de una RPC, que no tiene store. Usarlo reventaría.
+   */
+  it('sale de la cola por quitarDeCola, no por markSynced', async () => {
+    getPendingSync.mockResolvedValue([cobroEnCola()])
+    await syncManager.sync()
+    expect(quitarDeCola).toHaveBeenCalledWith('rpc_1')
+    expect(markSynced).not.toHaveBeenCalled()
+  })
+
+  it('si la RPC falla, el cobro NO se saca de la cola', async () => {
+    estado.errorRpc = { message: 'deadlock detected' }
+    getPendingSync.mockResolvedValue([cobroEnCola()])
+    await syncManager.sync()
+    expect(quitarDeCola).not.toHaveBeenCalled()
+  })
+
+  it('un item de rpc sin nombre no se descarta en silencio', async () => {
+    getPendingSync.mockResolvedValue([cobroEnCola({ data: { args: {} } })])
+    await syncManager.sync()
+    expect(quitarDeCola).not.toHaveBeenCalled()
+    expect(estado.llamadas.filter(l => l.tipo === 'rpc')).toHaveLength(0)
   })
 })
 

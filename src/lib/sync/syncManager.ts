@@ -1,14 +1,19 @@
 'use client'
 import { createClient } from '@/lib/supabase/client'
-import { getPendingSync, markSynced, getLocalDB } from '@/lib/db/indexeddb'
+import { getPendingSync, markSynced, quitarDeCola, getLocalDB } from '@/lib/db/indexeddb'
 import { reportarFalla } from '@/lib/reportarFalla'
 
 type PendingItem = {
   id: string
   tabla: string
   recordId: string
-  operacion: 'insert' | 'update' | 'delete'
-  data: Record<string, unknown> & { venta_items?: unknown[]; syncStatus?: string; localTimestamp?: number }
+  // 'rpc' no es una fila pendiente sino una llamada a repetir: la usa el cobro
+  // de cuotas, que toca cuatro tablas y tiene que entrar atomico.
+  operacion: 'insert' | 'update' | 'delete' | 'rpc'
+  data: Record<string, unknown> & {
+    venta_items?: unknown[]; syncStatus?: string; localTimestamp?: number
+    _rpc?: string; args?: Record<string, unknown>
+  }
   timestamp: number
 }
 
@@ -44,15 +49,36 @@ export const SYNC_AUTH_EVENT = 'syncAuthError'
 /**
  * Distingue "se cayo la red" de "tu sesion no vale mas". Es la diferencia entre
  * reintentar en silencio y avisarle al usuario que tiene que volver a entrar.
- * PGRST301 = JWT invalido o vencido · 42501 = RLS rechaza (sin identidad valida).
+ * PGRST301 = JWT invalido o vencido.
+ *
+ * 42501 NO cuenta, y antes contaba. Es "permiso denegado / RLS rechaza", y
+ * desde que las politicas miran permisos (fases C1-C3) eso significa casi
+ * siempre "tu rol no puede hacer esto", no "tu sesion murio". Tratarlo como
+ * sesion caida prendia el cartel de reautenticacion en cada carga para
+ * cualquiera con un item en la cola que la base rechazara — y como el item no
+ * sube nunca, el cartel tampoco se iba nunca.
  */
 function esErrorDeAuth(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   if (esErrorDePermiso(err)) return false   // falta de permiso no es sesion caida
+  if (esErrorDeRed(err)) return false       // sin red no se puede concluir nada
   const e = err as { code?: string; status?: number; message?: string }
+  // `status` solo lo traen los errores de Auth (GoTrue); los de PostgREST no.
   if (e.status === 401 || e.status === 403) return true
-  if (e.code === 'PGRST301' || e.code === '42501') return true
-  return /jwt|token|refresh|unauthorized|not authenticated/i.test(e.message ?? '')
+  if (e.code === 'PGRST301') return true
+  return /jwt|refresh token|invalid token|session missing|unauthorized|not authenticated/i.test(e.message ?? '')
+}
+
+/**
+ * No poder llegar al servidor no dice nada sobre la sesion. `navigator.onLine`
+ * da true con wifi conectado y sin internet, asi que estos errores aparecen
+ * aunque el chequeo de conexion haya pasado.
+ */
+function esErrorDeRed(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { name?: string; status?: number; message?: string }
+  if (e.name === 'AuthRetryableFetchError' || e.status === 0) return true
+  return /failed to fetch|networkerror|network request failed|load failed/i.test(e.message ?? '')
 }
 
 /**
@@ -70,8 +96,10 @@ function esErrorDeAuth(err: unknown): boolean {
  */
 function esErrorDePermiso(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
-  const e = err as { message?: string }
-  return /SIN_PERMISO/i.test(e.message ?? '')
+  const e = err as { code?: string; message?: string }
+  // 42501 = la base rechazo la escritura por privilegio o por RLS. Mismo caso
+  // que SIN_PERMISO pero dicho por Postgres en vez de por una RPC nuestra.
+  return e.code === '42501' || /SIN_PERMISO/i.test(e.message ?? '')
 }
 
 class SyncManager {
@@ -228,7 +256,25 @@ class SyncManager {
   }
 
   private async pushToSupabase() {
-    const pending = await getPendingSync() as PendingItem[]
+    const enCola = await getPendingSync() as PendingItem[]
+
+    // Limpieza de fantasmas. Hasta el commit 27a66bb, useTableSync cacheaba con
+    // saveLocal cada fila que venia del servidor, y saveLocal siempre encola:
+    // cada apertura de Finanzas dejaba un 'update' por movimiento. Los de
+    // productos y ventas se fueron solos (suben sin problema), pero los de
+    // movimientos NO: la base rechaza el UPDATE por RLS, asi que quedaron
+    // trabados para siempre — en produccion habia ~100, todos del 23/9.
+    //
+    // Se pueden borrar sin mirar el contenido porque NINGUN camino legitimo
+    // encola un 'update' de movimientos: la app solo los crea ('insert') y los
+    // borra ('delete'). Si algun dia se agrega editar movimientos, esto se va.
+    const fantasmas = enCola.filter(p => p.tabla === 'movimientos' && p.operacion === 'update')
+    if (fantasmas.length) {
+      await Promise.all(fantasmas.map(f => quitarDeCola(f.id)))
+      console.warn(`[SyncManager] ${fantasmas.length} items fantasma de movimientos descartados`)
+    }
+
+    const pending = enCola.filter(p => !fantasmas.includes(p))
     if (!pending.length) return
 
     // Antes de intentar subir nada, confirmar que la sesion sigue viva. Si la
@@ -237,8 +283,11 @@ class SyncManager {
     // y, sobre todo, no tocamos la cola local: los cambios siguen ahi.
     const { data: { user }, error: authErr } = await this.supabase.auth.getUser()
     if (authErr || !user) {
-      this.authError = true
-      console.warn('[SyncManager] Sesion invalida — la cola local queda intacta')
+      // Si getUser fallo por red no se sabe nada de la sesion: no se sube (la
+      // cola queda intacta) pero tampoco se le pide al usuario que reingrese.
+      // Antes cualquier error aca prendia el cartel de reautenticacion.
+      if (!esErrorDeRed(authErr)) this.authError = true
+      console.warn('[SyncManager] No se pudo confirmar la sesion — la cola local queda intacta')
       return
     }
 
@@ -263,6 +312,20 @@ class SyncManager {
       // Ojo: supabase-js NO tira excepcion, devuelve { error }. Si no lo
       // miramos, markSynced borra el item de la cola como si hubiera subido
       // y el cambio se pierde. Por eso cada operacion revisa su error.
+
+      // Accion encolada (una llamada a RPC, no una fila). Hoy la usa el cobro
+      // de cuotas. Sale por quitarDeCola y NO por markSynced: markSynced abre
+      // una transaccion sobre el store de la tabla, y acá `tabla` es el nombre
+      // de la RPC, que no tiene store.
+      if (item.operacion === 'rpc') {
+        const nombre = item.data._rpc
+        if (!nombre) throw new Error('Accion encolada sin nombre de RPC')
+        const { error } = await this.supabase.rpc(nombre, item.data.args ?? {})
+        if (error) throw error
+        await quitarDeCola(item.id)
+        return
+      }
+
       if (item.operacion === 'delete') {
         const { error } = await this.supabase.from(item.tabla).delete().eq('id', item.recordId)
         if (error) throw error

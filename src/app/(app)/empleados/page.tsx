@@ -223,9 +223,9 @@ export default function EmpleadosPage() {
       }}>
         <span style={{ fontSize: 15, lineHeight: 1.3 }}>👤</span>
         <span>
-          <strong>Cada persona necesita su propia cuenta.</strong> Stockio permite
-          un solo dispositivo por cuenta: si dos personas usan el mismo usuario se
-          van a bloquear mutuamente, y los permisos por rol dejan de tener efecto.
+          <strong>Cada persona necesita su propia cuenta.</strong> Si dos personas
+          usan el mismo usuario, los permisos por rol dejan de tener efecto y el
+          historial no puede decir quién hizo cada cosa.
         </span>
       </div>
 

@@ -90,6 +90,49 @@ export async function cacheLocal(tabla: string, data: { id: string; [k: string]:
   await database.put(tabla, { ...data, syncStatus: 'synced' })
 }
 
+/**
+ * Encola una LLAMADA A RPC, no una fila.
+ *
+ * saveLocal() asume que lo pendiente es "esta fila va a esta tabla", que sirve
+ * para productos o movimientos. Cobrar una cuota no entra en ese molde: toca
+ * cuatro tablas y tiene que ser atómico, así que lo que hay que repetir al
+ * reconectar es la llamada a registrar_pago_cuota(), no un upsert.
+ *
+ * Por eso esto escribe SOLO en sync_queue y no necesita un store propio — ni,
+ * por lo tanto, subir la versión de la base, que es una puerta de una sola
+ * dirección (ver la nota de DB_VERSION).
+ *
+ * La RPC encolada tiene que ser idempotente, porque un ítem se reintenta hasta
+ * que se confirma.
+ */
+export async function encolarAccion(
+  rpc: string,
+  args: Record<string, unknown>,
+  recordId: string,
+) {
+  const database = await getLocalDB()
+  await database.put('sync_queue', {
+    id: `rpc_${rpc}_${recordId}_${Date.now()}`,
+    tabla: rpc,
+    recordId,
+    operacion: 'rpc',
+    data: { _rpc: rpc, args },
+    timestamp: Date.now(),
+  })
+}
+
+/**
+ * Saca un ítem de la cola sin tocar ningún store de datos.
+ *
+ * markSynced() abre una transacción sobre la tabla del ítem para marcarle
+ * syncStatus, y para una acción de RPC esa tabla no existe. Acá solo se borra
+ * de la cola, que es lo único que corresponde.
+ */
+export async function quitarDeCola(syncQueueId: string) {
+  const database = await getLocalDB()
+  await database.delete('sync_queue', syncQueueId)
+}
+
 export async function getLocal(tabla: string, orgId: string) {
   const database = await getLocalDB()
   return database.getAllFromIndex(tabla, 'orgId', orgId)
