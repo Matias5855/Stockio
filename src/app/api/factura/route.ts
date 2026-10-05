@@ -18,6 +18,7 @@ import { parseBody, FacturaInputSchema, ValidationError } from '@/lib/schemas'
 import { decryptSecret } from '@/lib/crypto'
 import { from as emailFrom, replyTo } from '@/lib/email'
 import SaleTicketEmail from '@/emails/SaleTicketEmail'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 export const dynamic = 'force-dynamic'
 
@@ -162,6 +163,15 @@ export async function POST(req: NextRequest) {
 
     // 5. Enviar email con el ticket adjunto. React Email escapa automaticamente
     // todo el contenido interpolado, asi que no hace falta el escapeHtml manual.
+    // Resend no lanza excepcion: devuelve { error }. Antes no se miraba, y la
+    // pantalla confirmaba "Email enviado" aunque el cliente nunca recibiera su
+    // comprobante.
+    //
+    // La falla viaja como `email_error` y NO como error de la respuesta: esta
+    // ruta tambien puede haber emitido un CAE mas arriba, y un comprobante que
+    // AFIP ya autorizo no se puede esconder detras de una falla del mail.
+    let emailError: string | null = null
+
     if (email_cliente) {
       const html = await render(SaleTicketEmail({
         orgName: org?.name ?? 'Mi Negocio',
@@ -170,7 +180,7 @@ export async function POST(req: NextRequest) {
         clienteNombre: venta.cliente_nombre ?? undefined,
       }))
 
-      await resend.emails.send({
+      const { error: mailErr } = await resend.emails.send({
         from: emailFrom(org?.name ?? 'Stockio'),
         replyTo: replyTo(),
         to: email_cliente,
@@ -181,6 +191,11 @@ export async function POST(req: NextRequest) {
           content: pdfBase64,
         }],
       })
+
+      if (mailErr) {
+        reportarFalla('factura/enviar-mail', mailErr, { ventaId: venta_id, orgId: profile.org_id })
+        emailError = 'No se pudo enviar el email. Revisá la dirección y probá de nuevo.'
+      }
     }
 
     return NextResponse.json({
@@ -189,6 +204,7 @@ export async function POST(req: NextRequest) {
       cae_vencimiento,
       tipo_comprobante,
       arca_error: arcaError,
+      email_error: emailError,
     })
 
   } catch (err) {

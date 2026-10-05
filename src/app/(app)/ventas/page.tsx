@@ -422,9 +422,11 @@ export default function VentasPage() {
         body: JSON.stringify({ venta_id, email_cliente: emailInput, usar_arca: false }),
       })
       const data = await res.json()
-      setMsg(data.ok
+      // `email_error` llega con ok: true porque la ruta tambien puede emitir
+      // un CAE, que no se esconde por una falla del mail (ver api/factura).
+      setMsg(data.ok && !data.email_error
         ? { text: 'Email enviado correctamente ✓', ok: true }
-        : { text: data.error ?? 'Error al enviar', ok: false }
+        : { text: data.email_error ?? data.error ?? 'Error al enviar', ok: false }
       )
     } catch {
       setMsg({ text: 'Error de conexión', ok: false })

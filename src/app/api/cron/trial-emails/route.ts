@@ -107,13 +107,23 @@ async function procesarAvisos(opts: {
 
       const html = await buildEmail({ tipo, nombre, negocio, appUrl })
 
-      await resend.emails.send({
+      // Resend no lanza excepcion: devuelve { error }. Antes no se miraba y el
+      // aviso se marcaba como enviado igual, asi que un mail que no salio no
+      // se reintentaba nunca: el cliente no se enteraba de que se le vencia la
+      // prueba. Sin marcar, mañana el cron lo vuelve a encontrar y reintenta
+      // (mientras siga dentro de la ventana de dias de este aviso).
+      const { error: mailErr } = await resend.emails.send({
         from: emailFrom('Stockio'),
         replyTo: replyTo(),
         to: email,
         subject: ASUNTOS[tipo],
         html,
       })
+      if (mailErr) {
+        reportarFalla(`cron-trial/enviar-${tipo}`, mailErr, { suscripcionId: s.id, orgId: s.org_id })
+        fallidos++
+        continue
+      }
 
       const updatePayload: Record<string, string> = { [columna]: new Date().toISOString() }
       const { error: errMarca } = await supabase.from('suscripciones')
@@ -198,13 +208,22 @@ async function procesarTrialesVencidos(opts: {
         appUrl,
       }))
 
-      await resend.emails.send({
+      // Mismo error tragado que en los avisos de 23 y 28 dias. Aca, ademas, no
+      // marcar el aviso NO alcanza para reintentar: la suscripcion ya paso a
+      // 'vencida' unas lineas arriba y la consulta solo busca 'trial', asi que
+      // mañana no vuelve a entrar. Lo que se garantiza es que la falla se vea.
+      const { error: mailErr } = await resend.emails.send({
         from: emailFrom('Stockio'),
         replyTo: replyTo(),
         to: email,
         subject: 'Tu prueba de Stockio terminó',
         html,
       })
+      if (mailErr) {
+        reportarFalla('cron-trial/enviar-vencido', mailErr, { suscripcionId: s.id, orgId: s.org_id })
+        fallidos++
+        continue
+      }
 
       const { error: errAviso } = await supabase.from('suscripciones')
         .update({ aviso_vencido_enviado_at: new Date().toISOString() })
