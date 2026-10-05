@@ -6,6 +6,8 @@ import { requireRole, AuthError } from '@/lib/auth/requireUser'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { from as emailFrom, replyTo } from '@/lib/email'
 import InviteEmployeeEmail from '@/emails/InviteEmployeeEmail'
+import { rateLimit } from '@/lib/rateLimit'
+import { reportarFalla } from '@/lib/reportarFalla'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +16,21 @@ export async function POST(req: NextRequest) {
     // Solo el owner puede invitar empleados — gestionar_usuarios es exclusivo del owner.
     // Si en el futuro queremos que admin tambien pueda, agregar 'admin' al array.
     const { profile } = await requireRole(['owner'])
+
+    // Rate limit por NEGOCIO, no por IP como en register y aceptar. Esas rutas
+    // son publicas y el atacante es anonimo; esta solo la llega a usar un
+    // dueño logueado, asi que el riesgo es otro: una sesion robada o un script
+    // que manda mails en bucle, quemando la cuota de Resend y la reputacion
+    // del dominio de envio (si cae en spam, caen tambien los mails de
+    // bienvenida y de cobro de todos los clientes). Una PyME no invita mas de
+    // un puñado de personas: 10 por hora sobra para el uso real.
+    const rl = await rateLimit(`invitar:${profile.org_id}`, 10, 60 * 60 * 1000)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'Mandaste muchas invitaciones seguidas. Esperá un rato y probá de nuevo.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      )
+    }
 
     const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -59,13 +76,28 @@ export async function POST(req: NextRequest) {
       expiresAt: '7 días',
     }))
 
-    await resend.emails.send({
+    // Resend no lanza excepcion: devuelve { error }. Antes no se miraba, asi
+    // que si el mail no salia la pantalla decia "Invitación enviada" igual y
+    // el dueño se quedaba esperando a alguien que nunca recibio nada.
+    const { error: mailErr } = await resend.emails.send({
       from: emailFrom('Stockio'),
       replyTo: replyTo(),
       to: email,
       subject: `Te invitaron a usar Stockio en ${org_name}`,
       html,
     })
+
+    if (mailErr) {
+      reportarFalla('invitar/enviar-mail', mailErr, { orgId: profile.org_id })
+      // Se borra la invitacion: sin mail nadie tiene el link, y dejarla
+      // figuraria como "pendiente" en Empleados sin que exista forma de usarla.
+      // Asi el dueño puede reintentar limpio.
+      await admin.from('invitaciones').delete().eq('token', token)
+      return NextResponse.json(
+        { error: 'No se pudo enviar el mail de invitación. Revisá el email y probá de nuevo.' },
+        { status: 502 }
+      )
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err) {
