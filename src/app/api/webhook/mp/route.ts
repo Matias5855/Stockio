@@ -257,17 +257,21 @@ export async function POST(req: NextRequest) {
                     appUrl,
                   }))
 
-                  await resend.emails.send({
+                  // Resend devuelve { error } en vez de lanzar: el catch de
+                  // abajo nunca lo veia. No se corta el webhook por esto — la
+                  // suscripcion ya quedo activa, que es lo que importa.
+                  const { error: mailErr } = await resend.emails.send({
                     from: emailFrom('Stockio'),
                     replyTo: replyTo(),
                     to: ownerEmail,
                     subject: '¡Suscripción activada en Stockio!',
                     html,
                   })
+                  if (mailErr) reportarFalla('webhook-mp/mail-activacion', mailErr, { orgId })
                 }
               }
             } catch (emailErr) {
-              console.error('[Webhook MP] No se pudo enviar email de activacion:', emailErr)
+              reportarFalla('webhook-mp/mail-activacion', emailErr, { orgId })
             }
           }
         } else {
@@ -385,7 +389,13 @@ export async function POST(req: NextRequest) {
                       appUrl,
                     }))
 
-                    await resend.emails.send({
+                    // Antes se marcaba el aviso como enviado aunque el mail no
+                    // saliera, y durante 24 h no se volvia a intentar. Es el
+                    // aviso de "actualiza tu tarjeta": si no llega, el cliente
+                    // pierde el acceso cuando MP agota los reintentos sin
+                    // haber sabido nunca que habia un problema. Sin marcar,
+                    // el proximo intento de cobro rechazado lo vuelve a mandar.
+                    const { error: mailErr } = await resend.emails.send({
                       from: emailFrom('Stockio'),
                       replyTo: replyTo(),
                       to: ownerEmail,
@@ -393,13 +403,17 @@ export async function POST(req: NextRequest) {
                       html,
                     })
 
-                    await supabase.from('suscripciones')
-                      .update({ pago_fallido_aviso_at: new Date().toISOString() })
-                      .eq('org_id', sub.org_id)
+                    if (mailErr) {
+                      reportarFalla('webhook-mp/mail-pago-fallido', mailErr, { orgId: sub.org_id })
+                    } else {
+                      await supabase.from('suscripciones')
+                        .update({ pago_fallido_aviso_at: new Date().toISOString() })
+                        .eq('org_id', sub.org_id)
+                    }
                   }
                 }
               } catch (emailErr) {
-                console.error('[Webhook MP] No se pudo enviar email de pago fallido:', emailErr)
+                reportarFalla('webhook-mp/mail-pago-fallido', emailErr, { orgId: sub.org_id })
               }
             }
           }

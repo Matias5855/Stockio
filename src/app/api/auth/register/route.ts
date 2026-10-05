@@ -109,16 +109,21 @@ export async function POST(req: NextRequest) {
         appUrl,
       }))
 
-      await resend.emails.send({
+      // Resend devuelve { error } en vez de lanzar, asi que el catch de abajo
+      // no lo veia. No se corta el registro: la cuenta ya existe y funciona,
+      // el mail de bienvenida es un extra. Pero hay que enterarse, porque si
+      // falla para todos es señal de que el dominio de envio tiene un problema.
+      const { error: mailErr } = await resend.emails.send({
         from: emailFrom('Stockio'),
         replyTo: replyTo(),
         to: email,
         subject: `¡Bienvenido a Stockio, ${primerNombre}! 🎉`,
         html,
       })
+      if (mailErr) reportarFalla('register/mail-bienvenida', mailErr, { userId, orgId: org.id })
     } catch (emailErr) {
       // Si falla el email, no interrumpir el registro
-      console.error('[Register] Error enviando email:', emailErr)
+      reportarFalla('register/mail-bienvenida', emailErr, { userId, orgId: org.id })
     }
 
     return NextResponse.json({ ok: true, org_id: org.id, org_name: org.name })
