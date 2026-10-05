@@ -256,7 +256,7 @@ export default function StockPage() {
         overflow: 'hidden',
       }}>
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${t.borderCard}` }}>
-          <input
+          <input aria-label="Buscar producto por nombre o SKU"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por nombre o SKU…"
@@ -319,7 +319,7 @@ export default function StockPage() {
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
                           {puedeEditar && (
-                          <button onClick={() => openEdit(p)} title="Editar"
+                          <button onClick={() => openEdit(p)} title="Editar" aria-label="Editar"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               color: t.textMuted, fontSize: 14, padding: 6, borderRadius: 6,
@@ -329,7 +329,7 @@ export default function StockPage() {
                           >✎</button>
                           )}
                           {puedeEditar && (
-                          <button onClick={() => { if (confirm('¿Eliminar este producto?')) deleteProducto(p.id) }} title="Eliminar"
+                          <button onClick={() => { if (confirm('¿Eliminar este producto?')) deleteProducto(p.id) }} title="Eliminar" aria-label="Eliminar"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               color: t.textMuted, fontSize: 18, padding: 6, borderRadius: 6, lineHeight: 1,
@@ -551,7 +551,7 @@ export default function StockPage() {
               ] as const).map(([k, l, type]) => (
                 <div key={k}>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>{l}</p>
-                  <input
+                  <input aria-label={l}
                     type={type}
                     value={form[k]}
                     onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))}

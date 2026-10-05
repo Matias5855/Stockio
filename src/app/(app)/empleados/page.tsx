@@ -286,7 +286,7 @@ export default function EmpleadosPage() {
                   padding: '6px 14px', cursor: 'pointer',
                   color: COLORS.primary, fontSize: 12, fontWeight: 700,
                 }}>Permisos</button>
-                <button onClick={() => eliminarEmpleado(e.id)} style={{
+                <button onClick={() => eliminarEmpleado(e.id)} aria-label="Eliminar empleado" style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   color: t.textMuted, fontSize: 20, padding: 6, borderRadius: 6, lineHeight: 1,
                 }}
@@ -323,7 +323,7 @@ export default function EmpleadosPage() {
                   background: COLORS.badge.pendiente.bg, color: COLORS.badge.pendiente.text,
                   padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 700,
                 }}>Pendiente</span>
-                <button onClick={() => cancelarInvitacion(inv.id)} style={{
+                <button onClick={() => cancelarInvitacion(inv.id)} aria-label="Cancelar invitación" style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   color: t.textMuted, fontSize: 20, padding: 6, borderRadius: 6, lineHeight: 1,
                 }}

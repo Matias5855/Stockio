@@ -123,7 +123,7 @@ export default function HistorialPage() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Categoría:</span>
-          <select
+          <select aria-label="Filtrar por categoría"
             value={filtroEntidad}
             onChange={e => setFiltroEntidad(e.target.value)}
             style={{
@@ -142,7 +142,7 @@ export default function HistorialPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Acción:</span>
-          <select
+          <select aria-label="Filtrar por acción"
             value={filtroAccion}
             onChange={e => setFiltroAccion(e.target.value)}
             style={{

@@ -463,7 +463,7 @@ export default function VentasPage() {
 
   return (
     <div>
-      <input ref={barcodeRef} onKeyDown={handleBarcodeInput}
+      <input aria-label="Lector de código de barras" ref={barcodeRef} onKeyDown={handleBarcodeInput}
         style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', top: 0 }} />
 
       {scanner && <BarcodeScanner onDetected={handleBarcode} onClose={() => setScanner(false)} />}
@@ -598,13 +598,13 @@ export default function VentasPage() {
                         <div style={{ display: 'flex', gap: 4 }}>
                           {puedeEditar && v.estado !== 'cancelada' && (
                           <button onClick={() => cambiarEstado(v.id, v.estado === 'cobrada' ? 'pendiente' : 'cobrada')}
-                            title="Cambiar estado"
+                            title="Cambiar estado" aria-label="Cambiar estado"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 14, padding: 6, borderRadius: 6 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.primary; e.currentTarget.style.background = isDark ? 'rgba(13,148,136,0.15)' : '#CCFBF1' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
                           >⇄</button>
                           )}
-                          <button onClick={() => descargarPDF(v)} title="Descargar PDF (sin CAE)"
+                          <button onClick={() => descargarPDF(v)} title="Descargar PDF (sin CAE)" aria-label="Descargar PDF (sin CAE)"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.primary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >⬇</button>
                           {/* Emitir CAE genera una factura oficial ante AFIP:
@@ -613,7 +613,7 @@ export default function VentasPage() {
                             <button
                               onClick={() => emitirConCAE(v.id)}
                               disabled={emitiendoCAE === v.id}
-                              title="Emitir Factura C con CAE oficial de AFIP"
+                              title="Emitir Factura C con CAE oficial de AFIP" aria-label="Emitir Factura C con CAE oficial de AFIP"
                               style={{
                                 background: COLORS.badge.ok.bg,
                                 border: `1px solid #86EFAC`,
@@ -626,16 +626,16 @@ export default function VentasPage() {
                               {emitiendoCAE === v.id ? '⏳' : 'CAE'}
                             </button>
                           )}
-                          <button onClick={() => { setEmailModal(v.id); setEmailInput('') }} title="Enviar por email"
+                          <button onClick={() => { setEmailModal(v.id); setEmailInput('') }} title="Enviar por email" aria-label="Enviar por email"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.secondary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >✉</button>
                           {puedeEditar && v.estado === 'pendiente' && (
-                          <button onClick={() => abrirCobroQR(v)} disabled={generandoQR} title="Cobrar con QR de Mercado Pago"
+                          <button onClick={() => abrirCobroQR(v)} disabled={generandoQR} title="Cobrar con QR de Mercado Pago" aria-label="Cobrar con QR de Mercado Pago"
                             style={{ background: 'none', border: 'none', cursor: generandoQR ? 'wait' : 'pointer', color: COLORS.primary, fontSize: 14, padding: 6, borderRadius: 6 }}
                           >📱</button>
                           )}
                           {puedeEliminar && v.estado !== 'cancelada' && (
-                          <button onClick={() => anular(v)} title="Anular venta"
+                          <button onClick={() => anular(v)} title="Anular venta" aria-label="Anular venta"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 16, padding: 6, borderRadius: 6, lineHeight: 1 }}
                             onMouseEnter={e => { e.currentTarget.style.color = COLORS.danger; e.currentTarget.style.background = '#FFF1F2' }}
                             onMouseLeave={e => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = 'none' }}
@@ -746,18 +746,18 @@ export default function VentasPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Cliente</p>
-                <input value={form.cliente_nombre} onChange={e => setForm(p => ({...p, cliente_nombre: e.target.value}))} placeholder="Nombre del cliente" style={inp} />
+                <input aria-label="Cliente" value={form.cliente_nombre} onChange={e => setForm(p => ({...p, cliente_nombre: e.target.value}))} placeholder="Nombre del cliente" style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Producto</p>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <select value={form.producto_id} onChange={e => { const p = productos.find(x => x.id === e.target.value); setForm(f => ({...f, producto_id: e.target.value, precio_unitario: p ? String(p.precio_venta) : f.precio_unitario})) }} style={inp}>
+                  <select aria-label="Producto" value={form.producto_id} onChange={e => { const p = productos.find(x => x.id === e.target.value); setForm(f => ({...f, producto_id: e.target.value, precio_unitario: p ? String(p.precio_venta) : f.precio_unitario})) }} style={inp}>
                     <option value="">— Seleccionar —</option>
                     {productos.map(p => (
                       <option key={p.id} value={p.id}>{p.nombre}{p.talle ? ` — T: ${p.talle}` : ''}{p.color ? ` · ${p.color}` : ''} (Stock: {p.cantidad})</option>
                     ))}
                   </select>
-                  <button onClick={() => setScanner(true)} title="Escanear código"
+                  <button onClick={() => setScanner(true)} title="Escanear código" aria-label="Escanear código"
                     style={{
                       background: '#CCFBF1', border: `1px solid ${COLORS.primary}`,
                       borderRadius: 8, padding: '0 14px', cursor: 'pointer',
@@ -770,11 +770,11 @@ export default function VentasPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Cantidad</p>
-                  <input type="number" value={form.cantidad} onChange={e => setForm(p => ({...p, cantidad: e.target.value}))} style={inp} />
+                  <input aria-label="Cantidad" type="number" value={form.cantidad} onChange={e => setForm(p => ({...p, cantidad: e.target.value}))} style={inp} />
                 </div>
                 <div>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Precio unitario</p>
-                  <input type="number" value={form.precio_unitario} onChange={e => setForm(p => ({...p, precio_unitario: e.target.value}))} style={inp} />
+                  <input aria-label="Precio unitario" type="number" value={form.precio_unitario} onChange={e => setForm(p => ({...p, precio_unitario: e.target.value}))} style={inp} />
                 </div>
               </div>
               <div>
@@ -813,17 +813,17 @@ export default function VentasPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                       <div>
                         <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Cuotas</p>
-                        <input type="number" min="2" value={form.cantidad_cuotas}
+                        <input aria-label="Cantidad de cuotas" type="number" min="2" value={form.cantidad_cuotas}
                           onChange={e => setForm(p => ({ ...p, cantidad_cuotas: e.target.value }))} style={inp} />
                       </div>
                       <div>
                         <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Interés %</p>
-                        <input type="number" min="0" value={form.interes_pct}
+                        <input aria-label="Interés %" type="number" min="0" value={form.interes_pct}
                           onChange={e => setForm(p => ({ ...p, interes_pct: e.target.value }))} style={inp} />
                       </div>
                       <div>
                         <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Frecuencia</p>
-                        <select value={form.frecuencia}
+                        <select aria-label="Frecuencia de las cuotas" value={form.frecuencia}
                           onChange={e => setForm(p => ({ ...p, frecuencia: e.target.value }))} style={inp}>
                           <option value="semanal">Semanal</option>
                           <option value="quincenal">Quincenal</option>
@@ -899,7 +899,7 @@ export default function VentasPage() {
           }}>
             <p style={{ margin: '0 0 16px', fontSize: 19, fontWeight: 800, color: t.text }}>Enviar comprobante por email</p>
             <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Email del cliente</p>
-            <input value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="cliente@ejemplo.com" style={inp} />
+            <input aria-label="Email del cliente" value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="cliente@ejemplo.com" style={inp} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button onClick={() => setEmailModal(null)} style={{
                 background: 'none', border: `1px solid ${t.border}`, borderRadius: 8,

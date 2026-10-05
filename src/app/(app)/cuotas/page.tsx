@@ -388,7 +388,7 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
                   {detalle.cantidad_cuotas} cuotas de {fmt(detalle.monto_cuota)} · {detalle.frecuencia}
                 </p>
               </div>
-              <button onClick={() => setDetalle(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 22 }}>×</button>
+              <button onClick={() => setDetalle(null)} aria-label="Cerrar detalle" style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: 22 }}>×</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
@@ -491,31 +491,31 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div style={{ gridColumn: '1/-1' }}>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Nombre del cliente</p>
-                <input value={form.cliente_nombre} onChange={e => setForm(p => ({...p, cliente_nombre: e.target.value}))} style={inp} />
+                <input aria-label="Nombre del cliente" value={form.cliente_nombre} onChange={e => setForm(p => ({...p, cliente_nombre: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Email (link MP)</p>
-                <input type="email" value={form.cliente_email} onChange={e => setForm(p => ({...p, cliente_email: e.target.value}))} style={inp} />
+                <input aria-label="Email del cliente" type="email" value={form.cliente_email} onChange={e => setForm(p => ({...p, cliente_email: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Teléfono</p>
-                <input value={form.cliente_tel} onChange={e => setForm(p => ({...p, cliente_tel: e.target.value}))} style={inp} />
+                <input aria-label="Teléfono" value={form.cliente_tel} onChange={e => setForm(p => ({...p, cliente_tel: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Monto total ($)</p>
-                <input type="number" value={form.monto_total} onChange={e => setForm(p => ({...p, monto_total: e.target.value}))} style={inp} />
+                <input aria-label="Monto total" type="number" value={form.monto_total} onChange={e => setForm(p => ({...p, monto_total: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Interés (%)</p>
-                <input type="number" value={form.interes_pct} onChange={e => setForm(p => ({...p, interes_pct: e.target.value}))} style={inp} />
+                <input aria-label="Interés %" type="number" value={form.interes_pct} onChange={e => setForm(p => ({...p, interes_pct: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Cantidad de cuotas</p>
-                <input type="number" value={form.cantidad_cuotas} onChange={e => setForm(p => ({...p, cantidad_cuotas: e.target.value}))} style={inp} />
+                <input aria-label="Cantidad de cuotas" type="number" value={form.cantidad_cuotas} onChange={e => setForm(p => ({...p, cantidad_cuotas: e.target.value}))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Frecuencia</p>
-                <select value={form.frecuencia} onChange={e => setForm(p => ({...p, frecuencia: e.target.value}))} style={inp}>
+                <select aria-label="Frecuencia" value={form.frecuencia} onChange={e => setForm(p => ({...p, frecuencia: e.target.value}))} style={inp}>
                   <option value="semanal">Semanal</option>
                   <option value="quincenal">Quincenal</option>
                   <option value="mensual">Mensual</option>
@@ -523,7 +523,7 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Fecha inicio</p>
-                <input type="date" value={form.fecha_inicio} onChange={e => setForm(p => ({...p, fecha_inicio: e.target.value}))} style={inp} />
+                <input aria-label="Fecha de inicio" type="date" value={form.fecha_inicio} onChange={e => setForm(p => ({...p, fecha_inicio: e.target.value}))} style={inp} />
               </div>
             </div>
 

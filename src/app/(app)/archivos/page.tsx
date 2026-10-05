@@ -110,7 +110,7 @@ export default function ArchivosPage() {
                   ↗ Ver
                 </a>
               )}
-              <button onClick={() => { if (confirm('¿Eliminar este archivo?')) deleteArchivo(a.id, a.storage_path) }} style={{
+              <button onClick={() => { if (confirm('¿Eliminar este archivo?')) deleteArchivo(a.id, a.storage_path) }} aria-label="Eliminar archivo" style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: t.textMuted, fontSize: 20, padding: 6, borderRadius: 6, lineHeight: 1,
               }}

@@ -145,7 +145,7 @@ export default function ConfiguracionPage() {
             ] as const).map(f => (
               <div key={f.key}>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>{f.label}</p>
-                <input
+                <input aria-label={f.label}
                   value={formNegocio[f.key]}
                   onChange={e => setFormNegocio(p => ({ ...p, [f.key]: e.target.value }))}
                   placeholder={f.placeholder}
@@ -156,7 +156,7 @@ export default function ConfiguracionPage() {
 
             <div>
               <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Condición IVA</p>
-              <select
+              <select aria-label="Condición IVA"
                 value={formNegocio.condicion_iva}
                 onChange={e => setFormNegocio(p => ({ ...p, condicion_iva: e.target.value }))}
                 style={inp}
@@ -457,15 +457,15 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>CUIT</p>
-                <input value={form.cuit} onChange={e => setForm(p => ({ ...p, cuit: e.target.value }))} placeholder="20-12345678-9" style={inp} />
+                <input aria-label="CUIT" value={form.cuit} onChange={e => setForm(p => ({ ...p, cuit: e.target.value }))} placeholder="20-12345678-9" style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Punto de venta</p>
-                <input value={form.punto_venta} onChange={e => setForm(p => ({ ...p, punto_venta: e.target.value }))} style={inp} />
+                <input aria-label="Punto de venta" value={form.punto_venta} onChange={e => setForm(p => ({ ...p, punto_venta: e.target.value }))} style={inp} />
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Ambiente</p>
-                <select value={form.ambiente} onChange={e => setForm(p => ({ ...p, ambiente: e.target.value as 'testing' | 'produccion' }))} style={inp}>
+                <select aria-label="Ambiente de ARCA" value={form.ambiente} onChange={e => setForm(p => ({ ...p, ambiente: e.target.value as 'testing' | 'produccion' }))} style={inp}>
                   <option value="testing">Testing (homologación)</option>
                   <option value="produccion">Producción (facturas reales)</option>
                 </select>
@@ -476,7 +476,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
               <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
                 Certificado (.crt o .pem) — pegá el contenido completo
               </p>
-              <textarea
+              <textarea aria-label="Certificado de ARCA"
                 value={form.cert_pem}
                 onChange={e => setForm(p => ({ ...p, cert_pem: e.target.value }))}
                 placeholder={`-----BEGIN CERTIFICATE-----\nMIIDXTCCAk...\n-----END CERTIFICATE-----`}
@@ -488,7 +488,7 @@ function ArcaConfigSection({ isDark }: { isDark: boolean }) {
               <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
                 Clave privada (.key o .pem) — pegá el contenido completo
               </p>
-              <textarea
+              <textarea aria-label="Clave privada de ARCA"
                 value={form.private_key_pem}
                 onChange={e => setForm(p => ({ ...p, private_key_pem: e.target.value }))}
                 placeholder={`-----BEGIN PRIVATE KEY-----\nMIIEvQIBA...\n-----END PRIVATE KEY-----`}
@@ -571,11 +571,11 @@ function QuickQR({ isDark }: { isDark: boolean }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginBottom: 12 }}>
         <div>
           <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Monto ($)</p>
-          <input type="number" value={monto} onChange={e => setMonto(e.target.value)} placeholder="15000" style={inp} />
+          <input aria-label="Monto a cobrar" type="number" value={monto} onChange={e => setMonto(e.target.value)} placeholder="15000" style={inp} />
         </div>
         <div>
           <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Descripción</p>
-          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: Seña remera" style={inp} />
+          <input aria-label="Descripción del cobro" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: Seña remera" style={inp} />
         </div>
       </div>
 

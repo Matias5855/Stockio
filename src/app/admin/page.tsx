@@ -409,7 +409,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => eliminar(o)}
                             disabled={!!actionLoading}
-                            title="Eliminar org permanentemente (irreversible)"
+                            title="Eliminar org permanentemente (irreversible)" aria-label="Eliminar org permanentemente (irreversible)"
                             style={{ ...actionBtn, background: '#991B1B', color: '#FFFFFF', borderColor: '#7F1D1D' }}
                           >🗑</button>
                         </div>

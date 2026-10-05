@@ -509,7 +509,7 @@ function AppLayoutInner() {
               )}
               {/* En escritorio colapsa la sidebar; en mobile cierra el cajon,
                   que es lo unico que tiene sentido ahi. */}
-              <button onClick={() => { if (mobileNavOpen) setMobileNavOpen(false); else toggleCollapsed() }} style={{
+              <button onClick={() => { if (mobileNavOpen) setMobileNavOpen(false); else toggleCollapsed() }} aria-label={mobileNavOpen ? 'Cerrar menú' : 'Colapsar menú'} style={{
                 background: 'none', border: 'none', cursor: 'pointer', color: t.textOnSidebar,
                 padding: 4, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0,
                 fontSize: 18,

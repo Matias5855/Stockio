@@ -152,7 +152,7 @@ export default function FinanzasPage() {
                         {esIngreso ? '+' : '−'}{fmt(m.monto)}
                       </td>
                       <td style={{ padding: '12px 14px' }}>
-                        <button onClick={() => { if (confirm('¿Eliminar este movimiento?')) deleteMovimiento(m.id) }} style={{
+                        <button onClick={() => { if (confirm('¿Eliminar este movimiento?')) deleteMovimiento(m.id) }} aria-label="Eliminar movimiento" style={{
                           background: 'none', border: 'none', cursor: 'pointer',
                           color: t.textMuted, fontSize: 18, padding: 6, borderRadius: 6, lineHeight: 1,
                         }}
@@ -180,26 +180,26 @@ export default function FinanzasPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Descripción</p>
-                <input value={form.descripcion} onChange={e => setForm(p => ({...p, descripcion: e.target.value}))} style={inp} />
+                <input aria-label="Descripción" value={form.descripcion} onChange={e => setForm(p => ({...p, descripcion: e.target.value}))} style={inp} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Tipo</p>
-                  <select value={form.tipo} onChange={e => setForm(p => ({...p, tipo: e.target.value as 'ingreso' | 'egreso'}))} style={inp}>
+                  <select aria-label="Tipo de movimiento" value={form.tipo} onChange={e => setForm(p => ({...p, tipo: e.target.value as 'ingreso' | 'egreso'}))} style={inp}>
                     <option value="ingreso">Ingreso</option>
                     <option value="egreso">Egreso</option>
                   </select>
                 </div>
                 <div>
                   <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Categoría</p>
-                  <select value={form.categoria_nombre} onChange={e => setForm(p => ({...p, categoria_nombre: e.target.value}))} style={inp}>
+                  <select aria-label="Categoría" value={form.categoria_nombre} onChange={e => setForm(p => ({...p, categoria_nombre: e.target.value}))} style={inp}>
                     {['Ventas','Compras','Gastos fijos','RRHH','Impuestos','Otro'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
               <div>
                 <p style={{ margin: '0 0 5px', fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Monto ($)</p>
-                <input type="number" value={form.monto} onChange={e => setForm(p => ({...p, monto: e.target.value}))} style={inp} />
+                <input aria-label="Monto" type="number" value={form.monto} onChange={e => setForm(p => ({...p, monto: e.target.value}))} style={inp} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
