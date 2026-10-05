@@ -124,41 +124,40 @@ export async function POST(req: NextRequest) {
         const cuotaId = payment.metadata?.cuota_pago_id
 
         if (payment.status === 'approved' && cuotaId) {
-          const { error: errCuota } = await supabase.from('cuota_pagos').update({
-            estado: 'pagada',
-            fecha_pago: new Date().toISOString().split('T')[0],
-            mp_payment_id: String(payment.id),
-            metodo_pago: 'mp',
-          }).eq('id', cuotaId)
-          // El cliente pago la cuota y le seguiria figurando impaga.
-          if (errCuota) reportarFalla('webhook-mp/cuota-pagada', errCuota, {
-            cuotaId, mp_payment_id: String(payment.id),
+          // Misma RPC que usa la pantalla de Cuotas (db/cuotas_cobro_seguro.sql).
+          // Antes este bloque hacia lo suyo a mano y tenia tres problemas:
+          //
+          //  1. NO ERA IDEMPOTENTE. MP reintenta los webhooks y puede notificar
+          //     el mismo pago mas de una vez; cada entrega le sumaba otra cuota
+          //     al plan. La RPC corta si la cuota ya figura pagada.
+          //  2. Leia el plan, sumaba uno y escribia el total: si en ese momento
+          //     se cobraba otra cuota en el mostrador, una de las dos se perdia.
+          //  3. No registraba el ingreso en Finanzas ni marcaba la venta como
+          //     cobrada al completarse el plan. Una cuota pagada por link no
+          //     aparecia nunca en la caja; cobrada en mano, si.
+          //
+          // service_role queda exento del chequeo de org y permiso adentro de
+          // la RPC: aca no hay usuario, la autoridad es la firma del webhook.
+          const { data: cobro, error: errCobro } = await supabase.rpc('registrar_pago_cuota', {
+            p_cuota_pago_id: cuotaId,
+            p_metodo: 'mp',
+            p_mp_payment_id: String(payment.id),
           })
 
-          const { data: cuotaPago } = await supabase
-            .from('cuota_pagos').select('cuota_venta_id, monto').eq('id', cuotaId).single()
-
-          if (cuotaPago) {
-            const { data: cv } = await supabase
-              .from('cuotas_ventas').select('monto_pagado, cuotas_pagadas, cantidad_cuotas, monto_total')
-              .eq('id', cuotaPago.cuota_venta_id).single()
-
-            if (cv) {
-              const nuevoPagado = cv.monto_pagado + cuotaPago.monto
-              const nuevasCuotasPagadas = cv.cuotas_pagadas + 1
-              const completada = nuevasCuotasPagadas >= cv.cantidad_cuotas
-
-              const { error: errPlan } = await supabase.from('cuotas_ventas').update({
-                monto_pagado: nuevoPagado,
-                cuotas_pagadas: nuevasCuotasPagadas,
-                estado: completada ? 'completada' : 'activa',
-              }).eq('id', cuotaPago.cuota_venta_id)
-              // El pago quedo registrado pero el plan no avanza: el total
-              // pagado y la cantidad de cuotas quedan atrasados.
-              if (errPlan) reportarFalla('webhook-mp/avanzar-plan-cuotas', errPlan, {
-                cuota_venta_id: cuotaPago.cuota_venta_id, nuevasCuotasPagadas,
-              })
+          // El cliente pago y le seguiria figurando impaga. Se devuelve 500
+          // para que MP reintente: al ser idempotente, reintentar no duplica.
+          if (errCobro) {
+            reportarFalla('webhook-mp/cuota-pagada', errCobro, {
+              cuotaId, mp_payment_id: String(payment.id),
+            })
+            // Salvo que la cuota no exista: eso no se arregla reintentando.
+            if (!/CUOTA_INEXISTENTE|PLAN_INEXISTENTE/.test(errCobro.message ?? '')) {
+              return NextResponse.json({ error: 'Error procesando webhook' }, { status: 500 })
             }
+          }
+
+          if ((cobro as { ya_estaba?: boolean } | null)?.ya_estaba) {
+            console.log('[Webhook MP] Cuota ya registrada, entrega repetida:', cuotaId)
           }
         }
       }
