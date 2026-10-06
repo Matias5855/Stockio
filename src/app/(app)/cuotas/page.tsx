@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getTheme, COLORS } from '@/lib/theme'
 import { logHistorial } from '@/lib/historial'
 import { usePermiso } from '@/lib/auth/usePermiso'
-import { useCuotas, type CuotaVenta, type ResultadoCobro } from '@/lib/hooks/useCuotas'
+import { useCuotas, type CuotaVenta, type ResultadoCobro, type ResultadoPlan } from '@/lib/hooks/useCuotas'
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-AR')
 const supabase = createClient()
@@ -20,7 +20,7 @@ export default function CuotasPage() {
   // Los planes se leen por useTableSync: quedan cacheados en IndexedDB, asi que
   // sin señal se sigue viendo quien debe y cuando vence. Escribir (crear un
   // plan, cobrar una cuota) sigue siendo online — el por que esta en useCuotas.
-  const { cuotas, loading, refetch: fetchCuotas, cobrarCuota, puedeCrearPlan } = useCuotas()
+  const { cuotas, loading, refetch: fetchCuotas, cobrarCuota, crearPlan } = useCuotas()
   const [modal, setModal] = useState(false)
   const [detalle, setDetalle] = useState<CuotaVenta | null>(null)
 
@@ -62,52 +62,46 @@ export default function CuotasPage() {
 
   const save = async () => {
     if (!form.cliente_nombre || !form.monto_total) return
-    const orgId = localStorage.getItem('stk_org_id')
-    if (!orgId) return alert('Error: no se encontró la organización')
-
-    // 1. Insertar el plan de cuotas (necesito el id para vincular la venta)
-    const { data: cuotaCreada, error } = await supabase.from('cuotas_ventas').insert({
-      ...form,
-      org_id: orgId,
-      monto_total: montoConInteres,
-      monto_cuota: montoCuota,
-      cantidad_cuotas: +form.cantidad_cuotas,
-      interes_pct: +form.interes_pct,
-    }).select().single()
-    if (error) { alert(error.message); return }
-
-    // 2. Crear venta vinculada con estado pendiente.
-    // Uso nro_factura "CTA-{primeros 8 chars del id}" para poder volver a
-    // encontrarla al cobrar la ultima cuota sin necesitar columna extra.
-    if (cuotaCreada?.id) {
-      const cuotaIdShort = String(cuotaCreada.id).slice(0, 8).toUpperCase()
-      // Si esto falla el plan queda creado pero sin venta asociada, asi que el
-      // monto no aparece en Ventas y la ultima cuota no encuentra que cobrar.
-      const { error: errVenta } = await supabase.from('ventas').insert({
-        org_id: orgId,
-        nro_factura: `CTA-${cuotaIdShort}`,
+    // El plan y su venta CTA ahora van juntos adentro de crear_plan_cuotas()
+    // (db/cuotas_crear_plan.sql). Antes eran dos inserts sueltos desde acá: si
+    // fallaba el segundo, el plan quedaba sin venta, el monto no aparecía en
+    // Ventas y la última cuota no encontraba qué marcar como cobrada. Y al ser
+    // idempotente, funciona sin conexión.
+    let res: ResultadoPlan
+    try {
+      res = await crearPlan({
         cliente_nombre: form.cliente_nombre,
-        fecha: form.fecha_inicio,
-        estado: 'pendiente',
-        subtotal: montoConInteres,
-        descuento: 0,
-        total: montoConInteres,
-        notas: `Plan de cuotas: ${form.cantidad_cuotas} pagos de ${fmt(montoCuota)} (${form.frecuencia})`,
+        cliente_email: form.cliente_email,
+        cliente_tel: form.cliente_tel,
+        monto_total: montoConInteres,
+        monto_cuota: montoCuota,
+        cantidad_cuotas: +form.cantidad_cuotas,
+        interes_pct: +form.interes_pct,
+        frecuencia: form.frecuencia,
+        fecha_inicio: form.fecha_inicio,
+        notas_venta: `Plan de cuotas: ${form.cantidad_cuotas} pagos de ${fmt(montoCuota)} (${form.frecuencia})`,
       })
-      if (errVenta) {
-        alert(
-          `El plan de cuotas se creó, pero no se pudo registrar la venta asociada: ` +
-          `${errVenta.message}
-
-El plan va a aparecer en Cuotas, pero el monto no ` +
-          `figura en Ventas.`
-        )
-      }
-      logHistorial({
-        accion: 'crear', entidad: 'cuota_plan', entidad_id: cuotaCreada.id,
-        descripcion: `Plan de cuotas creado: ${form.cliente_nombre} · ${form.cantidad_cuotas} × ${fmt(montoCuota)} = ${fmt(montoConInteres)}`,
-      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error desconocido'
+      alert(
+        msg.includes('SIN_PERMISO') ? 'No tenés permiso para crear planes de cuotas.'
+        : msg.includes('PLAN_INVALIDO') ? msg.replace('PLAN_INVALIDO: ', 'Revisá los datos: ')
+        : `No se pudo crear el plan: ${msg}`
+      )
+      return
     }
+
+    if (res.offline) {
+      alert(
+        'Plan guardado sin conexión. Se sube solo cuando vuelva internet.\n\n' +
+        'Hasta entonces se puede ver, pero sus cuotas se cobran recién cuando termine de subir.'
+      )
+    }
+
+    logHistorial({
+      accion: 'crear', entidad: 'cuota_plan', entidad_id: res.id,
+      descripcion: `Plan de cuotas creado: ${form.cliente_nombre} · ${form.cantidad_cuotas} × ${fmt(montoCuota)} = ${fmt(montoConInteres)}${res.offline ? ' (sin conexión)' : ''}`,
+    })
 
     setModal(false)
     setForm({ cliente_nombre: '', cliente_email: '', cliente_tel: '', monto_total: '', cantidad_cuotas: '3', interes_pct: '0', frecuencia: 'mensual', fecha_inicio: new Date().toISOString().split('T')[0] })
@@ -239,22 +233,12 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
         </div>
         {/* Crear planes y cobrar cuotas es mover plata: va detras de
             gestionar_cuotas, aparte de ver_cuotas que solo deja mirar. */}
-        {/* Cobrar una cuota sí funciona sin señal (va por la cola), pero CREAR
-            un plan no: las cuotas las genera un trigger en el servidor. Se
-            deshabilita y se dice por qué, en vez de dejar que falle al tocar. */}
         {puedeGestionar && (
-        <button
-          onClick={() => setModal(true)}
-          disabled={!puedeCrearPlan}
-          title={puedeCrearPlan ? undefined : 'Necesitás conexión para armar un plan de cuotas. Cobrar sí funciona sin señal.'}
-          style={{
-            background: puedeCrearPlan ? COLORS.primary : t.border,
-            color: puedeCrearPlan ? '#fff' : t.textMuted,
-            border: 'none', borderRadius: 8,
-            padding: '10px 18px', cursor: puedeCrearPlan ? 'pointer' : 'not-allowed',
-            fontWeight: 700, fontSize: 13,
-            boxShadow: puedeCrearPlan ? '0 4px 12px rgba(13,148,136,0.2)' : 'none',
-          }}>
+        <button onClick={() => setModal(true)} style={{
+          background: COLORS.primary, color: '#fff', border: 'none', borderRadius: 8,
+          padding: '10px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+          boxShadow: '0 4px 12px rgba(13,148,136,0.2)',
+        }}>
           + Nueva cuota
         </button>
         )}
@@ -407,6 +391,19 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
               ))}
             </div>
 
+            {detalle._pendiente_sync && (
+              <div style={{
+                background: isDark ? 'rgba(224,160,48,0.10)' : '#FEF3C7',
+                border: `1px solid ${isDark ? 'rgba(224,160,48,0.35)' : '#FDE68A'}`,
+                borderRadius: 10, padding: '10px 14px', marginBottom: 16,
+                fontSize: 13, lineHeight: 1.5, color: t.text,
+              }}>
+                Este plan se creó sin conexión y todavía no subió. Las fechas son
+                una vista previa: <strong>vas a poder cobrar las cuotas cuando termine
+                de subir</strong>, apenas vuelva internet.
+              </div>
+            )}
+
             <p style={{ margin: '0 0 12px', fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Detalle de cuotas
             </p>
@@ -441,7 +438,10 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
                       fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6,
                       background: cpBadge.bg, color: cpBadge.text, textTransform: 'capitalize',
                     }}>{cp.estado}</span>
-                    {cp.estado !== 'pagada' && puedeGestionar && (
+                    {/* Un plan creado sin conexión muestra cuotas simuladas con
+                        ids locales: cobrarlas encolaría un pago que el servidor
+                        no puede aplicar nunca. Se cobra cuando el plan sube. */}
+                    {cp.estado !== 'pagada' && puedeGestionar && !detalle._pendiente_sync && (
                       <button onClick={() => registrarPago(cp.id, detalle.id, cp.monto)} style={{
                         background: COLORS.primary, border: 'none', borderRadius: 6,
                         padding: '6px 14px', cursor: 'pointer', color: '#fff',
@@ -455,7 +455,8 @@ El plan va a aparecer en Cuotas, pero el monto no ` +
               )
             })}
 
-            {detalle.cliente_email && puedeGestionar && (
+            {/* El link de MP apunta a una cuota del servidor: tampoco hay hasta que el plan sube. */}
+            {detalle.cliente_email && puedeGestionar && !detalle._pendiente_sync && (
               <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
                 <button onClick={() => generarLinkMP(detalle)} style={{
                   flex: 1, background: COLORS.badge.ok.bg, border: `1px solid #86EFAC`,

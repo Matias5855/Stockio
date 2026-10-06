@@ -87,7 +87,7 @@ vi.mock('@/lib/db/indexeddb', () => ({
 vi.mock('@/lib/sync/syncManager', () => ({ syncManager: { sync: async () => {} } }))
 vi.mock('@/lib/historial', () => ({ logHistorial: () => {} }))
 
-const { useCuotas } = await import('./useCuotas')
+const { useCuotas, vencimientoCuota } = await import('./useCuotas')
 const { useVentas } = await import('./useVentas')
 const { useStock } = await import('./useStock')
 
@@ -267,6 +267,109 @@ describe('useCuotas: cobrar una cuota', () => {
       const planLocal = ultimoCache('cuotas_ventas')!
       expect(planLocal.estado).toBe('completada')
     })
+  })
+})
+
+// =============================================================================
+/**
+ * Las fechas de un plan creado sin conexión son una simulación del trigger
+ * generar_cuotas() (db/referencia_generar_cuotas.sql). Si no coinciden con las
+ * que después genera el servidor, el vendedor le dice una fecha al cliente y el
+ * sistema muestra otra.
+ */
+describe('vencimientoCuota replica al trigger', () => {
+  it('la primera cuota vence un intervalo después del inicio, no el mismo día', () => {
+    expect(vencimientoCuota('2026-10-05', 'mensual', 1)).toBe('2026-11-05')
+  })
+
+  it('el mes se recorta al último día, como Postgres', () => {
+    expect(vencimientoCuota('2026-01-31', 'mensual', 1)).toBe('2026-02-28')
+    expect(vencimientoCuota('2028-01-31', 'mensual', 1)).toBe('2028-02-29')
+  })
+
+  /** Cada cuota sale de fecha_inicio, no de la anterior: si no, el recorte se arrastra. */
+  it('cada cuota se calcula desde el inicio, así el recorte no se arrastra', () => {
+    expect(vencimientoCuota('2026-01-31', 'mensual', 2)).toBe('2026-03-31')
+    expect(vencimientoCuota('2026-01-31', 'mensual', 13)).toBe('2027-02-28')
+  })
+
+  it('cruza de año', () => {
+    expect(vencimientoCuota('2026-11-15', 'mensual', 3)).toBe('2027-02-15')
+  })
+
+  it('semanal y quincenal son días corridos', () => {
+    expect(vencimientoCuota('2026-10-05', 'semanal', 2)).toBe('2026-10-19')
+    expect(vencimientoCuota('2026-10-05', 'quincenal', 1)).toBe('2026-10-20')
+    expect(vencimientoCuota('2026-12-25', 'quincenal', 1)).toBe('2027-01-09')
+  })
+})
+
+describe('useCuotas: crear un plan', () => {
+  const datos = {
+    cliente_nombre: 'Rosa', cliente_email: '', cliente_tel: '',
+    monto_total: 3000, monto_cuota: 1000, cantidad_cuotas: 3, interes_pct: 0,
+    frecuencia: 'mensual', fecha_inicio: '2026-01-31', notas_venta: 'Plan de cuotas: 3 pagos',
+  }
+
+  it('con conexión va por la RPC con un id generado en el cliente', async () => {
+    sb.rpcResp = { data: { id: 'x', ya_existia: false } }
+    const { result } = await montar(() => useCuotas())
+    let res!: Awaited<ReturnType<typeof result.current.crearPlan>>
+    await act(async () => { res = await result.current.crearPlan(datos) })
+
+    expect(res.offline).toBe(false)
+    expect(sb.rpcs[0].nombre).toBe('crear_plan_cuotas')
+    // El id viaja a la RPC: es lo que la hace idempotente.
+    expect(sb.rpcs[0].args.p_plan_id).toBe(res.id)
+    expect(sb.rpcs[0].args.p_plan).toEqual(datos)
+    expect(idb.encolarAccion).not.toHaveBeenCalled()
+  })
+
+  it('un error real del servidor se muestra y no se encola', async () => {
+    sb.rpcResp = { error: { message: 'SIN_PERMISO: no tenés permiso para crear planes de cuotas' } }
+    const { result } = await montar(() => useCuotas())
+    await act(async () => {
+      await expect(result.current.crearPlan(datos)).rejects.toThrow(/SIN_PERMISO/)
+    })
+    expect(idb.encolarAccion).not.toHaveBeenCalled()
+  })
+
+  it('si la red se cae a mitad de camino, encola el mismo pedido con el mismo id', async () => {
+    sb.rpcResp = { error: { message: 'TypeError: Failed to fetch' } }
+    const { result } = await montar(() => useCuotas())
+    await act(async () => { await result.current.crearPlan(datos) })
+    const [rpc, args] = idb.encolarAccion.mock.calls[0] as unknown as [string, Record<string, unknown>]
+    expect(rpc).toBe('crear_plan_cuotas')
+    expect(args).toEqual(sb.rpcs[0].args)
+  })
+
+  it('sin conexión lo muestra con cuotas simuladas y marcado como pendiente de subir', async () => {
+    const { result } = await montar(() => useCuotas())
+    enLinea = false
+    let res!: Awaited<ReturnType<typeof result.current.crearPlan>>
+    await act(async () => { res = await result.current.crearPlan(datos) })
+
+    expect(res.offline).toBe(true)
+    expect(sb.rpcs).toHaveLength(0)
+    const local = ultimoCache('cuotas_ventas') as unknown as ReturnType<typeof plan> & { _pendiente_sync: boolean }
+    expect(local.id).toBe(res.id)
+    expect(local._pendiente_sync).toBe(true)
+    expect(local.cuota_pagos.map(c => c.fecha_venc)).toEqual(['2026-02-28', '2026-03-31', '2026-04-30'])
+    expect(local.cuota_pagos.every(c => c.estado === 'pendiente' && c.monto === 1000)).toBe(true)
+  })
+
+  /**
+   * Las cuotas de un plan sin subir tienen ids locales que el servidor no va a
+   * tener nunca: un cobro encolado contra ellos fallaría para siempre.
+   */
+  it('no deja cobrar una cuota de un plan que todavía no subió', async () => {
+    sb.filas.cuotas_ventas = [plan({ _pendiente_sync: true })]
+    const { result } = await montar(() => useCuotas())
+    await act(async () => {
+      await expect(result.current.cobrarCuota('cp2', 'plan1', 1000)).rejects.toThrow(/PLAN_SIN_SUBIR/)
+    })
+    expect(sb.rpcs).toHaveLength(0)
+    expect(idb.encolarAccion).not.toHaveBeenCalled()
   })
 })
 
