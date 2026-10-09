@@ -133,6 +133,7 @@ function enCola(over: Partial<{
   id: string; tabla: string; recordId: string
   operacion: 'insert' | 'update' | 'delete'
   data: Record<string, unknown>
+  timestamp: number
 }> = {}) {
   return {
     id: 'cola_1',
@@ -441,6 +442,39 @@ describe('acciones encoladas (cobro de cuotas offline)', () => {
     await syncManager.sync()
     expect(quitarDeCola).not.toHaveBeenCalled()
     expect(estado.llamadas.filter(l => l.tipo === 'rpc')).toHaveLength(0)
+  })
+})
+
+/**
+ * Al vender en cuotas sin conexión se encolan dos cosas: la venta y el plan,
+ * que apunta a ella por venta_id. Si el plan subiera primero, la RPC
+ * respondería VENTA_INEXISTENTE. Y una venta offline puede usar un producto
+ * también creado offline: si subiera antes que él, PRODUCTO_INVALIDO.
+ */
+describe('orden de subida', () => {
+  it('filas sueltas, después ventas, después acciones de RPC', async () => {
+    const ahora = Date.now()
+    // Encolados en el orden "malo": primero el plan, después la venta, al final el producto.
+    getPendingSync.mockResolvedValue([
+      { id: 'q1', tabla: 'crear_plan_cuotas', recordId: 'plan1', operacion: 'rpc',
+        data: { _rpc: 'crear_plan_cuotas', args: { p_plan_id: 'plan1' } }, timestamp: ahora },
+      enCola({ id: 'q2', tabla: 'ventas', recordId: 'v1', operacion: 'insert', data: { id: 'v1' } }),
+      enCola({ id: 'q3', tabla: 'productos', recordId: 'p1', operacion: 'insert' }),
+    ])
+    await syncManager.sync()
+
+    const orden = estado.llamadas.map(l => l.tabla)
+    expect(orden).toEqual(['productos', 'crear_venta_segura', 'crear_plan_cuotas'])
+  })
+
+  it('las ventas suben en el orden en que se hicieron', async () => {
+    getPendingSync.mockResolvedValue([
+      enCola({ id: 'zz', tabla: 'ventas', recordId: 'segunda', operacion: 'insert', timestamp: 2000, data: { id: 'segunda' } }),
+      enCola({ id: 'aa', tabla: 'ventas', recordId: 'primera', operacion: 'insert', timestamp: 1000, data: { id: 'primera' } }),
+    ])
+    await syncManager.sync()
+    const ids = estado.llamadas.filter(l => l.tipo === 'rpc').map(l => (l.args as Record<string, unknown>).p_venta_id)
+    expect(ids).toEqual(['primera', 'segunda'])
   })
 })
 

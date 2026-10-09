@@ -294,13 +294,29 @@ class SyncManager {
     const orgId = localStorage.getItem('stk_org_id')
     if (!orgId) return
 
-    // Ventas necesitan correlativo de nro_factura → serie. Resto → paralelo.
-    const ventaItems = pending.filter(p => p.tabla === 'ventas')
-    const otrosItems = pending.filter(p => p.tabla !== 'ventas')
+    // El orden importa, en tres tandas:
+    //
+    //  1. Filas sueltas (productos, movimientos), en paralelo. Van primero
+    //     porque una venta hecha offline puede usar un producto también creado
+    //     offline: si la venta llegara antes, crear_venta_segura la rechazaría
+    //     con PRODUCTO_INVALIDO.
+    //  2. Ventas, de a una: el número de factura es correlativo.
+    //  3. Acciones de RPC (cobro y alta de planes de cuotas), de a una y en el
+    //     orden en que se hicieron. Van al final porque un plan armado al vender
+    //     en cuotas apunta a su venta por venta_id: si llegara antes que ella,
+    //     crear_plan_cuotas() respondería VENTA_INEXISTENTE.
+    const porFecha = (a: PendingItem, b: PendingItem) => a.timestamp - b.timestamp
+    const ventaItems = pending.filter(p => p.tabla === 'ventas').sort(porFecha)
+    const accionItems = pending.filter(p => p.operacion === 'rpc').sort(porFecha)
+    const filaItems = pending.filter(p => p.tabla !== 'ventas' && p.operacion !== 'rpc')
 
-    await Promise.all(otrosItems.map(item => this.pushItem(item, orgId)))
+    await Promise.all(filaItems.map(item => this.pushItem(item, orgId)))
 
     for (const item of ventaItems) {
+      await this.pushItem(item, orgId)
+    }
+
+    for (const item of accionItems) {
       await this.pushItem(item, orgId)
     }
   }

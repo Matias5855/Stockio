@@ -9,9 +9,10 @@ import Notificaciones from '@/components/Notificaciones'
 import Paywall, { TrialBanner, EstadoSuscripcion } from '@/components/Paywall'
 import OnboardingWizard from '@/components/OnboardingWizard'
 import SesionDesplazada from '@/components/SesionDesplazada'
-import { AppProvider, useApp } from '@/lib/context/AppContext'
+import { AppProvider, useApp, borrarPerfilCacheado } from '@/lib/context/AppContext'
 import { reclamarSesion, vigilarSesion } from '@/lib/auth/sesionUnica'
 import { tienePermiso } from '@/lib/auth/permisos'
+import { registrarServiceWorker } from '@/lib/registrarSW'
 
 // Lazy load de paginas
 const DashboardPage    = dynamic(() => import('./dashboard/page'),    { loading: () => <PageLoader /> })
@@ -23,6 +24,18 @@ const CuotasPage       = dynamic(() => import('./cuotas/page'),       { loading:
 const HistorialPage    = dynamic(() => import('./historial/page'),    { loading: () => <PageLoader /> })
 const EmpleadosPage    = dynamic(() => import('./empleados/page'),    { loading: () => <PageLoader /> })
 const ConfiguracionPage = dynamic(() => import('./configuracion/page'), { loading: () => <PageLoader /> })
+
+// Los mismos imports, para precargar todas las secciones con conexión y que
+// queden guardadas por el service worker (ver src/lib/registrarSW.ts). Van
+// aparte porque next/dynamic necesita ver el import() escrito adentro de cada
+// llamada para partir el código; apuntan a los mismos archivos.
+const PRECARGA_SECCIONES = [
+  () => import('./dashboard/page'), () => import('./stock/page'),
+  () => import('./ventas/page'),    () => import('./finanzas/page'),
+  () => import('./cuotas/page'),    () => import('./archivos/page'),
+  () => import('./historial/page'), () => import('./empleados/page'),
+  () => import('./configuracion/page'),
+]
 
 function PageLoader() {
   return (
@@ -161,6 +174,7 @@ function AppLayoutInner() {
 
   useEffect(() => {
     syncManager.init()
+    registrarServiceWorker(PRECARGA_SECCIONES)
     setIsOffline(!navigator.onLine)
 
     const refrescarReauth = () => {
@@ -277,6 +291,8 @@ function AppLayoutInner() {
     // Limpia timestamps de delta sync y la bandera de reautenticacion: si en
     // este mismo dispositivo entra otra cuenta, no debe heredar ese estado.
     syncManager.clearSyncState()
+    // Tambien el perfil cacheado para arrancar sin conexion (AppContext).
+    borrarPerfilCacheado()
     await supabase.auth.signOut()
     window.location.href = '/login'
   }, [supabase])

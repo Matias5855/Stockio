@@ -23,6 +23,25 @@
 -- 2026-10-05); la alternativa era cambiar el trigger para que los ids fueran
 -- predecibles.
 --
+-- DOS ORÍGENES DE UN PLAN (actualizado 2026-10-09)
+--
+--  · Desde la pantalla de Cuotas: no hay venta todavía, la función crea la
+--    venta `CTA-xxxxxxxx` vinculada.
+--  · Desde el alta de una venta en cuotas (pantalla de Ventas): la venta YA
+--    existe, con su número FC- y el stock descontado. Viene en
+--    p_plan->>'venta_id', el plan se engancha a ella y NO se crea otra venta —
+--    duplicaría la operación y descuadraría el inventario.
+--
+-- El segundo caso antes era un INSERT directo desde el navegador, que sin
+-- conexión fallaba: la venta quedaba registrada y el plan no ("La venta se
+-- registró, pero no se pudo crear el plan de cuotas: Failed to fetch").
+--
+-- Sin conexión, la venta y el plan se encolan por separado. syncManager sube
+-- las ventas ANTES que las acciones de RPC, así que cuando llega este plan su
+-- venta ya existe en el servidor (la venta offline sube con su id local, ver
+-- p_venta_id en crear_venta_segura). Si aun así no está, VENTA_INEXISTENTE deja
+-- el plan en la cola y se reintenta en el próximo sync.
+--
 -- PERMISO
 --
 -- `gestionar_cuotas`, la misma clave con la que la pantalla muestra el botón.
@@ -51,6 +70,7 @@ DECLARE
   v_frec      text;
   v_inicio    date;
   v_nro       text;
+  v_venta_id  uuid := NULLIF(p_plan->>'venta_id', '')::uuid;
 BEGIN
   IF v_org_id IS NULL THEN
     RAISE EXCEPTION 'SIN_ORG: usuario sin organización';
@@ -86,12 +106,20 @@ BEGIN
     RAISE EXCEPTION 'PLAN_INVALIDO: el monto tiene que ser mayor a cero';
   END IF;
 
+  -- Plan de una venta existente: la venta tiene que ser de este negocio.
+  IF v_venta_id IS NOT NULL THEN
+    SELECT nro_factura INTO v_nro FROM ventas WHERE id = v_venta_id AND org_id = v_org_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'VENTA_INEXISTENTE: la venta del plan no existe en tu negocio';
+    END IF;
+  END IF;
+
   -- El trigger generar_cuotas() crea las filas de cuota_pagos acá.
   INSERT INTO cuotas_ventas (
-    id, org_id, cliente_nombre, cliente_email, cliente_tel,
+    id, org_id, venta_id, cliente_nombre, cliente_email, cliente_tel,
     monto_total, monto_cuota, cantidad_cuotas, interes_pct, frecuencia, fecha_inicio
   ) VALUES (
-    p_plan_id, v_org_id,
+    p_plan_id, v_org_id, v_venta_id,
     trim(p_plan->>'cliente_nombre'),
     NULLIF(trim(p_plan->>'cliente_email'), ''),
     NULLIF(trim(p_plan->>'cliente_tel'), ''),
@@ -100,17 +128,19 @@ BEGIN
     v_frec, v_inicio
   );
 
-  -- La venta vinculada, en la MISMA transacción. Mismo número que antes
-  -- ("CTA-" + primeros 8 caracteres del id del plan): registrar_pago_cuota()
-  -- la busca así para marcarla cobrada al completar el plan.
-  v_nro := 'CTA-' || upper(left(p_plan_id::text, 8));
-  INSERT INTO ventas (org_id, nro_factura, cliente_nombre, fecha, estado,
-                      subtotal, descuento, total, notas)
-  VALUES (
-    v_org_id, v_nro, trim(p_plan->>'cliente_nombre'), v_inicio, 'pendiente',
-    v_total, 0, v_total,
-    NULLIF(p_plan->>'notas_venta', '')
-  );
+  -- Plan creado desde Cuotas: la venta vinculada, en la MISMA transacción.
+  -- Mismo número que antes ("CTA-" + primeros 8 caracteres del id del plan):
+  -- registrar_pago_cuota() la busca así para marcarla cobrada al completar.
+  IF v_venta_id IS NULL THEN
+    v_nro := 'CTA-' || upper(left(p_plan_id::text, 8));
+    INSERT INTO ventas (org_id, nro_factura, cliente_nombre, fecha, estado,
+                        subtotal, descuento, total, notas)
+    VALUES (
+      v_org_id, v_nro, trim(p_plan->>'cliente_nombre'), v_inicio, 'pendiente',
+      v_total, 0, v_total,
+      NULLIF(p_plan->>'notas_venta', '')
+    );
+  END IF;
 
   RETURN jsonb_build_object('id', p_plan_id, 'nro_factura', v_nro, 'ya_existia', false);
 END;

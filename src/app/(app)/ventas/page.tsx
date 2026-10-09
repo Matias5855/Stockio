@@ -9,6 +9,7 @@ import ExportarBtn from '@/components/ExportarBtn'
 import { exportarVentasExcel, exportarVentasPDF } from '@/lib/exportar'
 import { getTheme, COLORS } from '@/lib/theme'
 import { usePermiso } from '@/lib/auth/usePermiso'
+import { crearPlanCuotas } from '@/lib/hooks/useCuotas'
 
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false })
 
@@ -129,9 +130,6 @@ export default function VentasPage() {
     setTimeout(() => setMsg(null), 6000)
   }
 
-  // Cliente de Supabase para el plan de cuotas (la venta va por la RPC).
-  const supabase = useMemo(() => createClient(), [])
-
   const [form, setForm] = useState({
     cliente_nombre: '', producto_id: '', cantidad: '1',
     precio_unitario: '', metodo_pago: 'efectivo' as MetodoPago,
@@ -226,33 +224,43 @@ export default function VentasPage() {
       // Aca no: la venta ya existe, con su numero correlativo FC- y el stock
       // descontado. Crear otra duplicaria la operacion y descuadraria el
       // inventario, asi que el plan se engancha a la venta por venta_id.
+      //
+      // Antes era un INSERT directo a cuotas_ventas, que sin conexión fallaba:
+      // la venta quedaba guardada para subir y el plan no. Ahora va por
+      // crear_plan_cuotas() con venta_id, igual que la pantalla de Cuotas, y
+      // sin señal queda encolado. La venta offline sube con su mismo id (ver
+      // p_venta_id en crear_venta_segura) y syncManager sube las ventas antes
+      // que los planes, así que cuando llega el plan su venta ya existe.
       if (quedaACobrar && creada?.id) {
-        const orgId = localStorage.getItem('stk_org_id')
-        const { error: errPlan } = await supabase.from('cuotas_ventas').insert({
-          org_id: orgId,
-          venta_id: creada.id,
-          cliente_nombre: form.cliente_nombre,
-          monto_total: totalConInteres,
-          monto_cuota: montoPorCuota,
-          cantidad_cuotas: +form.cantidad_cuotas,
-          interes_pct: +form.interes_pct,
-          frecuencia: form.frecuencia,
-          fecha_inicio: new Date().toISOString().split('T')[0],
-        })
-        // La venta ya quedo registrada: si falla el plan hay que decirlo, no
-        // dejar al usuario creyendo que armo un plan de pagos que no existe.
-        if (errPlan) {
+        try {
+          const plan = await crearPlanCuotas({
+            venta_id: creada.id,
+            cliente_nombre: form.cliente_nombre,
+            cliente_email: '',
+            cliente_tel: '',
+            monto_total: totalConInteres,
+            monto_cuota: montoPorCuota,
+            cantidad_cuotas: +form.cantidad_cuotas,
+            interes_pct: +form.interes_pct,
+            frecuencia: form.frecuencia,
+            fecha_inicio: new Date().toISOString().split('T')[0],
+            notas_venta: '',
+          }, localStorage.getItem('stk_org_id'))
           setMsg({
-            text: `La venta se registró, pero no se pudo crear el plan de cuotas: ${errPlan.message}. Armalo desde Cuotas.`,
-            ok: false,
-          })
-          setTimeout(() => setMsg(null), 8000)
-        } else {
-          setMsg({
-            text: `Venta registrada · plan de ${form.cantidad_cuotas} cuotas de ${fmt(montoPorCuota)}`,
+            text: plan.offline
+              ? `Venta y plan de ${form.cantidad_cuotas} cuotas guardados sin conexión. Se suben solos cuando vuelva internet.`
+              : `Venta registrada · plan de ${form.cantidad_cuotas} cuotas de ${fmt(montoPorCuota)}`,
             ok: true,
           })
           setTimeout(() => setMsg(null), 6000)
+        } catch (e) {
+          // La venta ya quedo registrada: si falla el plan hay que decirlo, no
+          // dejar al usuario creyendo que armo un plan de pagos que no existe.
+          setMsg({
+            text: `La venta se registró, pero no se pudo crear el plan de cuotas: ${e instanceof Error ? e.message : 'error desconocido'}. Armalo desde Cuotas.`,
+            ok: false,
+          })
+          setTimeout(() => setMsg(null), 8000)
         }
       }
 

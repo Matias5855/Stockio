@@ -1,4 +1,12 @@
-const CACHE_NAME = 'stockflow-v3'
+// v4: vuelve a registrarse (ver src/lib/registrarSW.ts) despues de estar
+// desconectado desde abril. Subir la version descarta lo que haya quedado de
+// la v3 en navegadores que la tuvieran instalada.
+//
+// OJO al tocar este archivo: un service worker roto puede dejar la app
+// trabada en una version vieja para quien ya lo tiene instalado. Las paginas
+// van "network first" a proposito: con conexion siempre se baja la version
+// nueva, y el cache solo entra cuando no hay red.
+const CACHE_NAME = 'stockflow-v4'
 const OFFLINE_PAGE = '/offline.html'
 
 // Al instalar, cachear la página offline y assets críticos
@@ -33,13 +41,29 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return
 
-  // Assets estáticos de Next.js → Cache First
+  // El clone() tiene que ser SINCRONICO, antes de devolver la respuesta.
+  // Antes se clonaba adentro del .then de caches.open(): para ese momento el
+  // navegador ya podia estar leyendo el cuerpo, clone() fallaba con "body
+  // already used" y la respuesta no quedaba guardada. El offline dependia de
+  // ganar esa carrera.
+  //
+  // Tampoco se guarda una respuesta que vino de una redireccion: si /dashboard
+  // redirigio al login (sesion vencida), se guardaria el login con la clave de
+  // /dashboard y sin conexion se serviria eso en vez de la app.
+  const guardar = (req, res) => {
+    if (!res.ok || res.redirected) return
+    const copia = res.clone()
+    caches.open(CACHE_NAME).then(c => c.put(req, copia))
+  }
+
+  // Assets estáticos de Next.js → Cache First. Tienen hash en el nombre, así
+  // que un archivo cacheado nunca queda viejo: cada deploy pide otros nombres.
   if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(
       caches.match(request).then(cached => {
         if (cached) return cached
         return fetch(request).then(res => {
-          if (res.ok) caches.open(CACHE_NAME).then(c => c.put(request, res.clone()))
+          guardar(request, res)
           return res
         })
       })
@@ -51,9 +75,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then(response => {
-        if (response.ok) {
-          caches.open(CACHE_NAME).then(c => c.put(request, response.clone()))
-        }
+        guardar(request, response)
         return response
       })
       .catch(() => {

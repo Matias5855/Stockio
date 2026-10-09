@@ -70,6 +70,11 @@ export type DatosPlan = {
   fecha_inicio: string
   /** Texto de la venta CTA asociada. Lo arma la pantalla, que formatea los montos. */
   notas_venta: string
+  /**
+   * Plan de una venta que YA existe (alta de venta en cuotas, pantalla de
+   * Ventas). La RPC engancha el plan a esa venta y no crea la CTA.
+   */
+  venta_id?: string
 }
 
 export type ResultadoPlan = { id: string; offline: boolean }
@@ -109,6 +114,92 @@ export type ResultadoCobro = {
   completada?: boolean
 }
 
+/**
+ * Intenta la RPC; si no hay red, avisa para que el que llama encole.
+ *
+ * `navigator.onLine` da true con wifi conectado y sin internet, así que se
+ * intenta igual y, si la llamada muere por red, se sigue por el camino
+ * offline en vez de fallar. Es seguro porque las dos RPC son idempotentes: si
+ * el pedido llegó y lo que se perdió fue la respuesta, el reintento no
+ * duplica nada. Un error que NO es de red (permiso, datos inválidos) es una
+ * respuesta real del servidor: se lanza, no se encola.
+ */
+async function intentarOnline(
+  rpc: string,
+  args: Record<string, unknown>,
+): Promise<{ ok: true; data: unknown } | { ok: false }> {
+  if (!navigator.onLine) return { ok: false }
+  let data: unknown = null
+  let mensajeError: string | null = null
+  try {
+    const r = await createClient().rpc(rpc, args)
+    data = r.data
+    mensajeError = r.error ? (r.error.message ?? 'Error desconocido') : null
+  } catch (e) {
+    mensajeError = e instanceof Error ? e.message : String(e)
+  }
+  if (mensajeError === null) return { ok: true, data }
+  if (!ES_ERROR_DE_RED.test(mensajeError)) throw new Error(mensajeError)
+  return { ok: false }
+}
+
+/**
+ * Crea un plan de cuotas con su venta. Online por la RPC; offline queda
+ * encolado y se muestra con cuotas simuladas hasta que suba.
+ *
+ * El id del plan lo genera el cliente y viaja a la RPC, que es idempotente
+ * por ese id: reintentar desde la cola no crea dos planes.
+ *
+ * Es una función suelta y no parte del hook para que la pantalla de Ventas la
+ * use al vender en cuotas sin montar la lista entera de planes.
+ */
+export async function crearPlanCuotas(datos: DatosPlan, orgId: string | null): Promise<ResultadoPlan> {
+  const planId = crypto.randomUUID()
+  const args = { p_plan: datos, p_plan_id: planId }
+
+  const online = await intentarOnline('crear_plan_cuotas', args)
+  if (online.ok) return { id: planId, offline: false }
+
+  // --- Offline ---------------------------------------------------------
+  await encolarAccion('crear_plan_cuotas', args, planId)
+
+  if (orgId) {
+    const cuotaPagos: CuotaPago[] = Array.from({ length: datos.cantidad_cuotas }, (_, i) => ({
+      id: `local-${planId}-${i + 1}`,
+      nro_cuota: i + 1,
+      monto: datos.monto_cuota,
+      fecha_venc: vencimientoCuota(datos.fecha_inicio, datos.frecuencia, i + 1),
+      fecha_pago: null,
+      estado: 'pendiente',
+      metodo_pago: '',
+      mp_payment_id: null,
+    }))
+
+    await cacheLocal('cuotas_ventas', {
+      id: planId,
+      org_id: orgId,
+      cliente_nombre: datos.cliente_nombre,
+      cliente_email: datos.cliente_email || null,
+      cliente_tel: datos.cliente_tel || null,
+      monto_total: datos.monto_total,
+      monto_pagado: 0,
+      cantidad_cuotas: datos.cantidad_cuotas,
+      cuotas_pagadas: 0,
+      monto_cuota: datos.monto_cuota,
+      interes_pct: datos.interes_pct,
+      frecuencia: datos.frecuencia,
+      estado: 'activa',
+      proximo_venc: cuotaPagos[0]?.fecha_venc ?? null,
+      mp_link_pago: null,
+      created_at: new Date().toISOString(),
+      cuota_pagos: cuotaPagos,
+      _pendiente_sync: true,
+    })
+  }
+
+  return { id: planId, offline: true }
+}
+
 export function useCuotas() {
   const { data: cuotas, loading, orgId, refetch } = useTableSync<CuotaVenta>({
     table: 'cuotas_ventas',
@@ -116,37 +207,6 @@ export function useCuotas() {
     order: { column: 'created_at', ascending: false },
     localSort: (a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''),
   })
-
-  const supabase = createClient()
-
-  /**
-   * Intenta la RPC; si no hay red, avisa para que el que llama encole.
-   *
-   * `navigator.onLine` da true con wifi conectado y sin internet, así que se
-   * intenta igual y, si la llamada muere por red, se sigue por el camino
-   * offline en vez de fallar. Es seguro porque las dos RPC son idempotentes: si
-   * el pedido llegó y lo que se perdió fue la respuesta, el reintento no
-   * duplica nada. Un error que NO es de red (permiso, datos inválidos) es una
-   * respuesta real del servidor: se lanza, no se encola.
-   */
-  const intentarOnline = async (
-    rpc: string,
-    args: Record<string, unknown>,
-  ): Promise<{ ok: true; data: unknown } | { ok: false }> => {
-    if (!navigator.onLine) return { ok: false }
-    let data: unknown = null
-    let mensajeError: string | null = null
-    try {
-      const r = await supabase.rpc(rpc, args)
-      data = r.data
-      mensajeError = r.error ? (r.error.message ?? 'Error desconocido') : null
-    } catch (e) {
-      mensajeError = e instanceof Error ? e.message : String(e)
-    }
-    if (mensajeError === null) return { ok: true, data }
-    if (!ES_ERROR_DE_RED.test(mensajeError)) throw new Error(mensajeError)
-    return { ok: false }
-  }
 
   /**
    * Cobra una cuota. Online llama a la RPC; offline la deja encolada y refleja
@@ -234,62 +294,11 @@ export function useCuotas() {
     return { offline: true, yaEstaba: false, cuotasPagadas: pagadas, completada }
   }
 
-  /**
-   * Crea un plan de cuotas con su venta. Online por la RPC; offline queda
-   * encolado y se muestra con cuotas simuladas hasta que suba.
-   *
-   * El id del plan lo genera el cliente y viaja a la RPC, que es idempotente
-   * por ese id: reintentar desde la cola no crea dos planes.
-   */
+  /** Crea un plan y refresca la lista. La lógica vive en crearPlanCuotas(). */
   const crearPlan = async (datos: DatosPlan): Promise<ResultadoPlan> => {
-    const planId = crypto.randomUUID()
-    const args = { p_plan: datos, p_plan_id: planId }
-
-    const online = await intentarOnline('crear_plan_cuotas', args)
-    if (online.ok) {
-      await refetch()
-      return { id: planId, offline: false }
-    }
-
-    // --- Offline ---------------------------------------------------------
-    await encolarAccion('crear_plan_cuotas', args, planId)
-
-    if (orgId) {
-      const cuotaPagos: CuotaPago[] = Array.from({ length: datos.cantidad_cuotas }, (_, i) => ({
-        id: `local-${planId}-${i + 1}`,
-        nro_cuota: i + 1,
-        monto: datos.monto_cuota,
-        fecha_venc: vencimientoCuota(datos.fecha_inicio, datos.frecuencia, i + 1),
-        fecha_pago: null,
-        estado: 'pendiente',
-        metodo_pago: '',
-        mp_payment_id: null,
-      }))
-
-      await cacheLocal('cuotas_ventas', {
-        id: planId,
-        org_id: orgId,
-        cliente_nombre: datos.cliente_nombre,
-        cliente_email: datos.cliente_email || null,
-        cliente_tel: datos.cliente_tel || null,
-        monto_total: datos.monto_total,
-        monto_pagado: 0,
-        cantidad_cuotas: datos.cantidad_cuotas,
-        cuotas_pagadas: 0,
-        monto_cuota: datos.monto_cuota,
-        interes_pct: datos.interes_pct,
-        frecuencia: datos.frecuencia,
-        estado: 'activa',
-        proximo_venc: cuotaPagos[0]?.fecha_venc ?? null,
-        mp_link_pago: null,
-        created_at: new Date().toISOString(),
-        cuota_pagos: cuotaPagos,
-        _pendiente_sync: true,
-      })
-      await refetch()
-    }
-
-    return { id: planId, offline: true }
+    const res = await crearPlanCuotas(datos, orgId)
+    await refetch()
+    return res
   }
 
   return { cuotas, loading, orgId, refetch, cobrarCuota, crearPlan }
